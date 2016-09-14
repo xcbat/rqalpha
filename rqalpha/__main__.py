@@ -22,11 +22,13 @@ import shutil
 import datetime
 import tempfile
 import tarfile
+import errno
+import csv
 
 import pandas as pd
 import click
 import requests
-from six import exec_, print_
+from six import exec_, print_, StringIO, iteritems
 
 from . import StrategyExecutor
 from . import api
@@ -34,7 +36,7 @@ from .data import LocalDataProxy
 from .logger import user_log, user_print
 from .trading_params import TradingParams
 from .utils.click_helper import Date
-from .utils import dummy_func
+from .utils import dummy_func, convert_int_to_date
 from .scheduler import Scheduler
 
 
@@ -121,8 +123,9 @@ def examples(directory):
 
     try:
         shutil.copytree(source_dir, os.path.join(directory, "examples"))
-    except FileExistsError:
-        print("Folder examples is exists.")
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            print_("Folder examples is exists.")
 
 
 @cli.command()
@@ -134,7 +137,47 @@ def plot(result_file):
     show_draw_result(result_file, results_df)
 
 
-def run_strategy(source_code, strategy_filename, start_date, end_date, init_cash, data_bundle_path, show_progress):
+@cli.command()
+@click.argument('result', type=click.Path(exists=True), required=True)
+@click.argument('csv-file', type=click.Path(), required=True)
+def report(result, csv_file):
+    '''generate report from backtest output file
+    '''
+    result_df = pd.read_pickle(result)
+
+    csv_txt = StringIO()
+
+    csv_txt.write("Trades\n")
+    fieldnames = ['date', 'order_book_id', 'amount', 'price', "commission", "tax"]
+    writer = csv.DictWriter(csv_txt, fieldnames=fieldnames)
+    writer.writeheader()
+    for dt, trades in result_df.trades.iteritems():
+        for t in trades:
+            trade = dict(t.__dict__)
+            trade.pop("order_id")
+            trade["date"] = trade["date"].strftime("%Y-%m-%d %H:%M:%S")
+            writer.writerow(trade)
+
+    csv_txt.write("\nPositions\n")
+    fieldnames = ['date', 'order_book_id', 'market_value', 'quantity']
+    writer = csv.DictWriter(csv_txt, fieldnames=fieldnames)
+    writer.writeheader()
+    for _dt, positions in result_df.positions.iteritems():
+        dt = _dt.strftime("%Y-%m-%d %H:%M:%S")
+        for order_book_id, position in iteritems(positions):
+            writer.writerow({
+                "date": dt,
+                "order_book_id": order_book_id,
+                "market_value": position.market_value,
+                "quantity": position.quantity,
+            })
+
+    with open(csv_file, 'w') as csvfile:
+        csvfile.write(csv_txt.getvalue())
+
+
+def run_strategy(source_code, strategy_filename, start_date, end_date,
+                 init_cash, data_bundle_path, show_progress):
     scope = {
         "logger": user_log,
         "print": user_print,
@@ -145,12 +188,17 @@ def run_strategy(source_code, strategy_filename, start_date, end_date, init_cash
 
     try:
         data_proxy = LocalDataProxy(data_bundle_path)
-    except FileNotFoundError:
-        print_("data bundle might crash. Run `%s update_bundle` to redownload data bundle." % sys.argv[0])
-        sys.exit()
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            print_("data bundle might crash. Run `%s update_bundle` to redownload data bundle." % sys.argv[0])
+            sys.exit()
+
+    # FIXME set end_date to latest data's date
+    dates = data_proxy.last("000001.XSHG", end_date, 10, "1d", "date")
+    end_date = min(convert_int_to_date(dates[-1]), end_date)
 
     trading_cal = data_proxy.get_trading_dates(start_date, end_date)
-    Scheduler.set_trading_dates(data_proxy.get_trading_dates(start_date, datetime.date.today()))
+    Scheduler.set_trading_dates(data_proxy.get_trading_dates(start_date, end_date.date()))
     trading_params = TradingParams(trading_cal, start_date=start_date.date(), end_date=end_date.date(),
                                    init_cash=init_cash, show_progress=show_progress)
 
@@ -232,8 +280,8 @@ def show_draw_result(title, results_df):
     ax.grid(b=True, which='minor', linewidth=.2)
     ax.grid(b=True, which='major', linewidth=1)
 
-    ax.plot(results_df["total_returns"], label="strategy", alpha=1, linewidth=2, color=red)
     ax.plot(results_df["benchmark_total_returns"], label="benchmark", alpha=1, linewidth=2, color=blue)
+    ax.plot(results_df["total_returns"], label="strategy", alpha=1, linewidth=2, color=red)
 
     # manipulate
     vals = ax.get_yticks()

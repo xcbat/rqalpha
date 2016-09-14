@@ -16,26 +16,18 @@
 
 
 import copy
-from collections import defaultdict, OrderedDict
-
 import pandas as pd
-import numpy as np
+from collections import defaultdict, OrderedDict
 from six import iteritems
 
 from ..const import ORDER_STATUS
 from .. import const
 from ..account import Account
-from ..data import BarMap
 from ..i18n import gettext as _
 from ..logger import user_log
-from ..utils.context import ExecutionContext
-from .commission import AStockCommission
-from .slippage import FixedPercentSlippageDecider
-from .tax import AStockTax
 from .order import Order
 from .order_style import MarketOrder, LimitOrder
 from .portfolio import Portfolio, Dividend
-from .position import Position
 from .risk_cal import RiskCal
 from .trade import Trade
 
@@ -315,6 +307,12 @@ class SimuExchange(object):
         cost_money = price * amount
         is_buy = amount > 0
 
+        # check whether is trading
+        if not bar.is_trading:
+            return False, _("Order Rejected: {order_book_id} is not trading.").format(
+                order_book_id=order_book_id,
+            )
+
         # handle limit order
         if self.trading_params.frequency == "1d":
             if isinstance(order.style, LimitOrder):
@@ -329,7 +327,7 @@ class SimuExchange(object):
             raise NotImplementedError
 
         # check amount
-        if abs(amount) < 100:
+        if abs(amount) < int(self.data_proxy.instrument(order_book_id).round_lot):
             return False, _("Order Rejected: amount must over 100 for {order_book_id} ").format(
                 order_book_id=order_book_id,
             )
@@ -347,12 +345,6 @@ class SimuExchange(object):
                 order_book_id=order_book_id,
                 quantity=abs(order.quantity),
                 sellable=position.sellable,
-            )
-
-        # check whether is trading
-        if not bar.is_trading:
-            return False, _("Order Rejected: {order_book_id} is not trading.").format(
-                order_book_id=order_book_id,
             )
 
         # # TODO check whether is limit up or limit down

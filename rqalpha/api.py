@@ -24,15 +24,18 @@ import six
 
 from .instruments import Instrument
 from .logger import user_log
-from .utils import ExecutionContext
+from .utils import ExecutionContext, get_last_date
 from .utils.history import HybridDataFrame, missing_handler
 from .i18n import gettext as _
 from .scheduler import scheduler
 from .const import EXECUTION_PHASE
+from .analyser.order_style import MarketOrder, LimitOrder
 
 
 __all__ = [
-    'scheduler'
+    'scheduler',
+    'LimitOrder',
+    'MarketOrder',
 ]
 
 
@@ -45,10 +48,8 @@ def check_is_trading(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         id_or_ins = args[0]
-        if isinstance(id_or_ins, Instrument):
-            order_book_id = id_or_ins.order_book_id
-        else:
-            order_book_id = id_or_ins
+
+        order_book_id = assure_order_book_id(id_or_ins)
 
         bar_dict = ExecutionContext.get_current_bar_dict()
         if not bar_dict[order_book_id].is_trading:
@@ -82,10 +83,7 @@ def order_shares(id_or_ins, amount, style=None):
     :return:  A unique order id.
     :rtype: int
     """
-    if isinstance(id_or_ins, Instrument):
-        order_book_id = id_or_ins.order_book_id
-    else:
-        order_book_id = id_or_ins
+    order_book_id = assure_order_book_id(id_or_ins)
 
     if amount == 0:
         user_log.error(_("order_shares {order_book_id} amount is 0.").format(
@@ -93,10 +91,8 @@ def order_shares(id_or_ins, amount, style=None):
         ))
         return
 
-    amount = int(amount) // 100 * 100
-
-    if not isinstance(id_or_ins, six.string_types):
-        raise NotImplementedError
+    round_lot = int(get_data_proxy().instrument(order_book_id).round_lot)
+    amount = int(amount) // round_lot * round_lot
 
     bar_dict = ExecutionContext.get_current_bar_dict()
     order = get_simu_exchange().create_order(bar_dict, order_book_id, amount, style)
@@ -123,7 +119,11 @@ def order_lots(id_or_ins, amount, style=None):
     :return:  A unique order id.
     :rtype: int
     """
-    return order_shares(id_or_ins, amount * 100, style)
+    order_book_id = assure_order_book_id(id_or_ins)
+
+    round_lot = int(get_data_proxy().instrument(order_book_id).round_lot)
+
+    return order_shares(order_book_id, amount * round_lot, style)
 
 
 @check_is_trading
@@ -132,7 +132,7 @@ def order_lots(id_or_ins, amount, style=None):
                                 EXECUTION_PHASE.SCHEDULED)
 def order_value(id_or_ins, cash_amount, style=None):
     """
-    Place ann order by specified value amount rather than specific number
+    Place an order by specified value amount rather than specific number
         of shares/lots. Negative cash_amount results in selling the given
         amount of value, if the cash_amount is larger than you current
         security’s position, then it will sell all shares of this security.
@@ -147,15 +147,13 @@ def order_value(id_or_ins, cash_amount, style=None):
     :return:  A unique order id.
     :rtype: int
     """
-    if isinstance(id_or_ins, Instrument):
-        order_book_id = id_or_ins.order_book_id
-    else:
-        order_book_id = id_or_ins
+    order_book_id = assure_order_book_id(id_or_ins)
 
     # TODO market order might be different
     bar_dict = ExecutionContext.get_current_bar_dict()
     price = bar_dict[order_book_id].close
-    amount = ((cash_amount // price) // 100) * 100
+    round_lot = int(get_data_proxy().instrument(order_book_id).round_lot)
+    amount = ((cash_amount // price) // round_lot) * round_lot
 
     # if the cash_amount is larger than you current security’s position,
     # then it will sell all shares of this security.
@@ -164,7 +162,7 @@ def order_value(id_or_ins, cash_amount, style=None):
         if abs(amount) > position.sellable:
             amount = -position.sellable
 
-    return order_shares(id_or_ins, amount, style)
+    return order_shares(order_book_id, amount, style)
 
 
 @check_is_trading
@@ -217,10 +215,7 @@ def order_target_value(id_or_ins, cash_amount, style=None):
     :return:  A unique order id.
     :rtype: int
     """
-    if isinstance(id_or_ins, Instrument):
-        order_book_id = id_or_ins.order_book_id
-    else:
-        order_book_id = id_or_ins
+    order_book_id = assure_order_book_id(id_or_ins)
 
     # TODO market order might be different
     bar_dict = ExecutionContext.get_current_bar_dict()
@@ -258,10 +253,7 @@ def order_target_percent(id_or_ins, percent, style=None):
     :return:  A unique order id.
     :rtype: int
     """
-    if isinstance(id_or_ins, Instrument):
-        order_book_id = id_or_ins.order_book_id
-    else:
-        order_book_id = id_or_ins
+    order_book_id = assure_order_book_id(id_or_ins)
 
     # TODO market order might be different
     bar_dict = ExecutionContext.get_current_bar_dict()
@@ -359,13 +351,33 @@ def history(bar_count, frequency, field):
 
     results = {}
 
+    dt = ExecutionContext.get_current_dt().date()
+    if ExecutionContext.get_active().phase == EXECUTION_PHASE.BEFORE_TRADING:
+        dt = get_last_date(ExecutionContext.get_trading_params().trading_calendar, dt)
+
     # This make history slow
-    # for order_book_id in list(executor.current_universe)[:1]:
-    #     hist = data_proxy.history(order_book_id, bar_count, frequency, field)
-    #     results[order_book_id] = hist
+    for order_book_id in list(executor.current_universe):
+        hist = data_proxy.history(order_book_id, dt, bar_count, frequency, field)
+        results[order_book_id] = hist
 
     handler = partial(missing_handler, bar_count=bar_count, frequency=frequency, field=field)
     return HybridDataFrame(results, missing_handler=handler)
+
+
+@export_as_api
+@ExecutionContext.enforce_phase(EXECUTION_PHASE.BEFORE_TRADING,
+                                EXECUTION_PHASE.HANDLE_BAR,
+                                EXECUTION_PHASE.SCHEDULED)
+def last(order_book_id, bar_count, frequency, field):
+    executor = get_strategy_executor()
+    data_proxy = get_data_proxy()
+
+    dt = ExecutionContext.get_current_dt().date()
+    if ExecutionContext.get_active().phase == EXECUTION_PHASE.BEFORE_TRADING:
+        dt = get_last_date(ExecutionContext.get_trading_params().trading_calendar, dt)
+
+    data = data_proxy.last(order_book_id, dt, bar_count, frequency, field)
+    return data
 
 
 @export_as_api
@@ -407,3 +419,14 @@ def get_current_dt():
 
 def get_data_proxy():
     return ExecutionContext.get_strategy_executor().data_proxy
+
+
+def assure_order_book_id(id_or_ins):
+    if isinstance(id_or_ins, Instrument):
+        order_book_id = id_or_ins.order_book_id
+    elif isinstance(id_or_ins, six.string_types):
+        order_book_id = id_or_ins
+    else:
+        raise NotImplementedError
+
+    return order_book_id

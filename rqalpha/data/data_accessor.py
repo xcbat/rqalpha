@@ -14,17 +14,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import division
+
 import abc
 import datetime
-
-from six import with_metaclass, iteritems
 import pandas as pd
 import numpy as np
+from six import with_metaclass, string_types
 
 from .bar import BarObject
 from ..utils.context import ExecutionContext
+from ..utils import convert_date_to_int, convert_int_to_date
 from .data_source import LocalDataSource
-from ..const import EXECUTION_PHASE
 
 
 class DataProxy(with_metaclass(abc.ABCMeta)):
@@ -77,10 +78,25 @@ class DataProxy(with_metaclass(abc.ABCMeta)):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def history(self, order_book_id, bar_count, frequency, field):
+    def history(self, order_book_id, dt, bar_count, frequency, field):
         """get history data
 
         :param str order_book_id:
+        :param datetime dt:
+        :param int bar_count:
+        :param str frequency: '1d' or '1m'
+        :param str field: "open", "close", "high", "low", "volume", "last", "total_turnover"
+        :returns:
+        :rtype: pandas.DataFrame
+
+        """
+        raise NotImplementedError
+
+    def last(self, order_book_id, dt, bar_count, frequency, field):
+        """get history data, will not fill empty data
+
+        :param str order_book_id:
+        :param datetime dt:
         :param int bar_count:
         :param str frequency: '1d' or '1m'
         :param str field: "open", "close", "high", "low", "volume", "last", "total_turnover"
@@ -107,39 +123,68 @@ class LocalDataProxy(DataProxy):
     def __init__(self, root_dir):
         self._data_source = LocalDataSource(root_dir)
         self._cache = {}
+        self._origin_cache = {}
         self._dividend_cache = {}
 
         self.trading_calendar = self.get_trading_dates("2005-01-01", datetime.date.today())
+        trading_calender_int = np.array(
+            [int(t.strftime("%Y%m%d000000")) for t in self.trading_calendar], dtype="<u8")
+        self.trading_calender_int = trading_calender_int[
+            trading_calender_int <= convert_date_to_int(datetime.date.today())]
 
     def get_bar(self, order_book_id, dt):
         try:
-            df = self._cache[order_book_id]
+            bars = self._cache[order_book_id]
         except KeyError:
-            df = self._data_source.get_all_bars(order_book_id)
-            df = self._fill_all_bars(df)
-            self._cache[order_book_id] = df
+            bars = self._data_source.get_all_bars(order_book_id)
+            bars = self._fill_all_bars(bars)
+            self._cache[order_book_id] = bars
+
+        if isinstance(dt, string_types):
+            dt = pd.Timestamp(dt)
 
         instrument = self._data_source.instruments(order_book_id)
-        return BarObject(instrument, df.xs(dt.date()))
+        # dt = int(pd.Timestamp(dt).strftime("%Y%m%d%H%M%S"))
+        dt = convert_date_to_int(dt)
+        return BarObject(instrument, bars[bars["date"].searchsorted(dt)])
 
-    def history(self, order_book_id, bar_count, frequency, field):
+    def history(self, order_book_id, dt, bar_count, frequency, field):
         if frequency == '1m':
             raise RuntimeError('Minute bar not supported yet!')
 
         try:
-            df = self._cache[order_book_id]
+            bars = self._cache[order_book_id]
         except KeyError:
-            df = self._data_source.get_all_bars(order_book_id)
-            df = self._fill_all_bars(df)
-            self._cache[order_book_id] = df
+            bars = self._data_source.get_all_bars(order_book_id)
+            bars = self._fill_all_bars(bars)
+            self._cache[order_book_id] = bars
 
-        dt = ExecutionContext.get_current_dt().date()
-        i = df.index.searchsorted(dt, side='right')
-        # you can only access yesterday history in before_trading
-        if ExecutionContext.get_active().phase == EXECUTION_PHASE.BEFORE_TRADING:
-            i -= 1
-        left = i - bar_count if i >= bar_count else 0
-        hist = df[left:i][field]
+        dt = convert_date_to_int(dt)
+
+        i = bars["date"].searchsorted(dt)
+        left = i - bar_count + 1 if i >= bar_count else 0
+        bars = bars[left:i + 1]
+
+        series = pd.Series(bars[field], index=[convert_int_to_date(t) for t in bars["date"]])
+
+        return series
+
+    def last(self, order_book_id, dt, bar_count, frequency, field):
+        if frequency == '1m':
+            raise RuntimeError('Minute bar not supported yet!')
+
+        try:
+            bars = self._origin_cache[order_book_id]
+        except KeyError:
+            bars = self._data_source.get_all_bars(order_book_id)
+            bars = bars[bars["volume"] > 0]
+            self._origin_cache[order_book_id] = bars
+
+        dt = convert_date_to_int(dt)
+
+        i = bars["date"].searchsorted(dt)
+        left = i - bar_count + 1 if i >= bar_count else 0
+        hist = bars[left:i + 1][field]
 
         return hist
 
@@ -166,17 +211,25 @@ class LocalDataProxy(DataProxy):
     def instrument(self, order_book_id):
         return self._data_source.instruments(order_book_id)
 
-    def _fill_all_bars(self, df):
-        trading_calendar = self.trading_calendar
+    def _fill_all_bars(self, bars):
+        trading_calender_int = self.trading_calender_int
 
-        t = df.index[0] if not df.empty else pd.Timestamp(datetime.date.today())
-        _df = pd.DataFrame(columns=df.columns, index=trading_calendar[trading_calendar < t]).fillna(0)
-        df = pd.concat([_df, df])
+        # prepend
+        prepend_date = trading_calender_int[:trading_calender_int.searchsorted(bars[0]["date"])]
+        prepend_bars = np.zeros(len(prepend_date), dtype=bars.dtype)
+        dates = prepend_bars["date"]
+        dates[:] = prepend_date
 
-        t = df.index[-1]
-        _df = pd.DataFrame(columns=df.columns, index=trading_calendar[trading_calendar > t])
-        for column in df.columns:
-            _df[column] = df.iloc[-1][column]
-        df = pd.concat([df, _df])
+        # append
+        append_date = trading_calender_int[trading_calender_int.searchsorted(bars[-1]["date"]) + 1:]
+        append_bars = np.zeros(len(append_date), dtype=bars.dtype)
+        dates = append_bars["date"]
+        dates[:] = append_date
 
-        return df
+        for key in ["open", "high", "low", "close"]:
+            col = append_bars[key]
+            col[:] = bars[-1][key]  # fill with bars's last bar
+
+        # fill bars
+        new_bars = np.concatenate([prepend_bars, bars, append_bars])
+        return new_bars
