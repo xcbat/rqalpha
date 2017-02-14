@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from six import iteritems, itervalues
+import six
 
 from .base_portfolio import BasePortfolio
 from ..dividend import Dividend
@@ -38,7 +38,7 @@ FuturePersistMap = {
 }
 
 
-class FuturePortfolioClone:
+class FuturePortfolioClone(object):
     __repr__ = dict_repr
 
 
@@ -54,43 +54,43 @@ class FuturePortfolio(BasePortfolio):
         self._start_date = portfolio_dict['_start_date']
         self._positions.clear()
         self._dividend_info.clear()
-        for persist_key, origin_key in iteritems(FuturePersistMap):
+        for persist_key, origin_key in six.iteritems(FuturePersistMap):
             if persist_key == "_dividend_info":
-                for order_book_id, dividend_dict in iteritems(portfolio_dict[persist_key]):
+                for order_book_id, dividend_dict in six.iteritems(portfolio_dict[persist_key]):
                     self._dividend_info[order_book_id] = Dividend.__from_dict__(dividend_dict)
             elif persist_key == "_positions":
-                for order_book_id, position_dict in iteritems(portfolio_dict[persist_key]):
+                for order_book_id, position_dict in six.iteritems(portfolio_dict[persist_key]):
                     self._positions[order_book_id] = FuturePosition.__from_dict__(position_dict)
             else:
                 setattr(self, origin_key, portfolio_dict[persist_key])
 
     def __to_dict__(self):
         p_dict = {}
-        for persist_key, origin_key in iteritems(FuturePersistMap):
+        for persist_key, origin_key in six.iteritems(FuturePersistMap):
             if persist_key == "_dividend_info":
-                p_dict[persist_key] = {oid: dividend.__to_dict__() for oid, dividend in iteritems(getattr(self, origin_key))}
+                p_dict[persist_key] = {oid: dividend.__to_dict__() for oid, dividend in six.iteritems(getattr(self, origin_key))}
             elif persist_key == "_positions":
-                p_dict[persist_key] = {oid: position.__to_dict__() for oid, position in iteritems(getattr(self, origin_key))}
+                p_dict[persist_key] = {oid: position.__to_dict__() for oid, position in six.iteritems(getattr(self, origin_key))}
             else:
                 p_dict[persist_key] = getattr(self, origin_key)
         return p_dict
 
     @property
-    def positions(self) -> "FuturePosition[]":
+    def positions(self):
         """
         【dict】一个包含期货子组合仓位的字典，以order_book_id作为键，position对象作为值
         """
         return self._positions
 
     @property
-    def cash(self) -> float:
+    def cash(self):
         """
         【float】可用资金
         """
         return self.portfolio_value - self.margin - self.daily_holding_pnl - self.frozen_cash
 
     @property
-    def portfolio_value(self) -> float:
+    def portfolio_value(self):
         """
         【float】总权益，昨日总权益+当日盈亏
         """
@@ -100,55 +100,55 @@ class FuturePortfolio(BasePortfolio):
         return self._portfolio_value
 
     # @property
-    # def _risk_cash(self) -> float:
+    # def _risk_cash(self):
     #     # 风控资金
     #     risk_cash = self.cash if self.daily_holding_pnl > 0 else self.cash + self.daily_holding_pnl
     #     return risk_cash
 
     @property
-    def buy_margin(self) -> float:
+    def buy_margin(self):
         """
         【float】多头保证金
         """
         # 买保证金
         # TODO 这里需要考虑 T TF 这种跨合约单向大边的情况
         # TODO 这里需要考虑 同一个合约跨期单向大边的情况
-        return sum(position.buy_margin for position in itervalues(self.positions))
+        return sum(position.buy_margin for position in six.itervalues(self.positions))
 
     @property
-    def sell_margin(self) -> float:
+    def sell_margin(self):
         """
         【float】空头保证金
         """
         # 卖保证金
-        return sum(position.sell_margin for position in itervalues(self.positions))
+        return sum(position.sell_margin for position in six.itervalues(self.positions))
 
     @property
-    def margin(self) -> float:
+    def margin(self):
         """
         【float】已占用保证金
         """
         # 总保证金
-        return sum(position.margin for position in itervalues(self.positions))
+        return sum(position.margin for position in six.itervalues(self.positions))
 
     @property
-    def daily_holding_pnl(self) -> float:
+    def daily_holding_pnl(self):
         """
         【float】当日浮动盈亏
         """
         # 当日持仓盈亏
-        return sum(position.daily_holding_pnl for position in itervalues(self.positions))
+        return sum(position.daily_holding_pnl for position in six.itervalues(self.positions))
 
     @property
-    def daily_realized_pnl(self) -> float:
+    def daily_realized_pnl(self):
         """
         【float】当日平仓盈亏
         """
         # 当日平仓盈亏
-        return sum(position.daily_realized_pnl for position in itervalues(self.positions))
+        return sum(position.daily_realized_pnl for position in six.itervalues(self.positions))
 
     @property
-    def daily_pnl(self) -> float:
+    def daily_pnl(self):
         """
         【float】当日盈亏，当日浮动盈亏 + 当日平仓盈亏 - 当日费用
         """

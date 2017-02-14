@@ -7,7 +7,7 @@
 兼容性
 ==================
 
-RQAlpha目前只支持 python 3.4 及以上，Python 2 暂不支持。
+RQAlpha目前只支持 python 3.4+ && Python 2.7+
 
 安装前
 ==================
@@ -16,7 +16,7 @@ RQAlpha目前只支持 python 3.4 及以上，Python 2 暂不支持。
 
 Windows 环境下编译安装 bcolz 需要使用Visual C++ Compiler，需要自行下载并安装 visual-cpp-build-tools，
 
-如果觉得麻烦，也可以直接去 http://www.lfd.uci.edu/~gohlke/pythonlibs/#bcolz 下载相应版本的boclz wheel包，直接安装编译后的 bcolz 版本。
+如果觉得麻烦，也可以直接去 http://www.lfd.uci.edu/~gohlke/pythonlibs/#bcolz 下载相应版本的 bcolz wheel 包，直接安装编译后的 bcolz 版本。
 
 安装
 ==================
@@ -25,13 +25,18 @@ Windows 环境下编译安装 bcolz 需要使用Visual C++ Compiler，需要自�
 
     $ pip install -U pip setuptools
 
+因为 bcolz 对于一些用户可能会安装困难，可能需要重试多次，所以建议先安装 cython / bcolz 库::
+
+    $ pip install cython
+    $ pip install bcolz==1.1.0
+
 安装 RQAlpha ::
 
     $ pip install rqalpha
 
 如果执行 `pip install` 安装依赖库网络速度比较慢的话，推荐使用国内镜像来进行加速::
 
-    $ pip install -i http://pypi.douban.com/simple/ --trusted-host pypi.douban.com rqalpha
+    $ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple rqalpha
 
 查看 RQAlpha 是否安装成功可以通过如下方式::
 

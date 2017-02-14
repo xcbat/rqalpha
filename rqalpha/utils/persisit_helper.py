@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import six
 import hashlib
 from collections import OrderedDict
 
@@ -24,13 +25,13 @@ from .logger import system_log
 from ..const import PERSIST_MODE
 
 
-class CoreObjectsPersistProxy:
+class CoreObjectsPersistProxy(object):
     def __init__(self, scheduler):
         self._objects = {'scheduler': scheduler}
 
     def get_state(self):
         result = {}
-        for key, obj in self._objects.items():
+        for key, obj in six.iteritems(self._objects):
             state = obj.get_state()
             if state is not None:
                 result[key] = state
@@ -39,14 +40,14 @@ class CoreObjectsPersistProxy:
 
     def set_state(self, state):
         state = jsonpickle.loads(state.decode('utf-8'))
-        for key, value in state.items():
+        for key, value in six.iteritems(state):
             try:
                 self._objects[key].set_state(value)
             except KeyError:
                 system_log.warn('core object state for {} ignored'.format(key))
 
 
-class PersistHelper:
+class PersistHelper(object):
     def __init__(self, persist_provider, event_bus, persist_mode):
         self._objects = OrderedDict()
         self._last_state = {}
@@ -58,7 +59,7 @@ class PersistHelper:
             event_bus.add_listener(Events.POST_SETTLEMENT, self.persist)
 
     def persist(self, *args, **kwargs):
-        for key, obj in self._objects.items():
+        for key, obj in six.iteritems(self._objects):
             state = obj.get_state()
             if not state:
                 continue
@@ -74,7 +75,7 @@ class PersistHelper:
         self._objects[key] = obj
 
     def restore(self):
-        for key, obj in self._objects.items():
+        for key, obj in six.iteritems(self._objects):
             state = self._persist_provider.load(key)
             system_log.debug('restore {} with state = {}', key, state)
             if not state:

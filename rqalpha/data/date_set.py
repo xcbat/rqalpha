@@ -16,12 +16,16 @@
 
 import bcolz
 import numpy as np
-from functools import lru_cache
+try:
+    # For Python 2 兼容
+    from functools import lru_cache
+except Exception as e:
+    from fastcache import lru_cache
 
 from .. import cache_control
 
 
-class DateSet:
+class DateSet(object):
     def __init__(self, f):
         self._dates = bcolz.open(f, 'r')
         self._index = self._dates.attrs['line_map']

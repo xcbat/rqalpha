@@ -14,9 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import six
 import time
-import datetime
-from six import iteritems
 
 from ..utils import id_gen
 from ..utils.repr import property_repr, properties
@@ -34,7 +33,7 @@ TradePersistMap = {
 }
 
 
-class Trade:
+class Trade(object):
     __slots__ = ["_calendar_dt", "_trading_dt", "_price", "_amount", "_order", "_commission", "_tax", "_trade_id",
                  "_close_today_amount"]
 
@@ -71,7 +70,7 @@ class Trade:
     @classmethod
     def __from_dict__(cls, trade_dict, order):
         trade = cls()
-        for persist_key, origin_key in iteritems(TradePersistMap):
+        for persist_key, origin_key in six.iteritems(TradePersistMap):
             if persist_key == "_order_id":
                 continue
             setattr(trade, origin_key, trade_dict[persist_key])
@@ -80,7 +79,7 @@ class Trade:
 
     def __to_dict__(self):
         trade_dict = {}
-        for persist_key, origin_key in iteritems(TradePersistMap):
+        for persist_key, origin_key in six.iteritems(TradePersistMap):
             if persist_key == "_order_id":
                 trade_dict["_order_id"] = self._order.order_id
             else:
@@ -88,11 +87,11 @@ class Trade:
         return trade_dict
 
     @property
-    def trading_datetime(self) -> datetime.datetime:
+    def trading_datetime(self):
         return self._trading_dt
 
     @property
-    def datetime(self) -> datetime.datetime:
+    def datetime(self):
         return self._calendar_dt
 
     @property

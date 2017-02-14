@@ -14,13 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import six
 import os
-from functools import lru_cache
-
 import numpy as np
+try:
+    # For Python 2 兼容
+    from functools import lru_cache
+except Exception as e:
+    from fastcache import lru_cache
 
 from .. import cache_control
-from ..utils.datetime import convert_date_to_int, convert_int_to_date
+from ..utils.datetime_func import convert_date_to_int, convert_int_to_date
 from ..interface import AbstractDataSource
 from .converter import StockBarConverter, IndexBarConverter
 from .converter import FutureDayBarConverter, FundDayBarConverter
@@ -127,7 +131,7 @@ class BaseDataSource(AbstractDataSource):
     def _are_fields_valid(fields, valid_fields):
         if fields is None:
             return True
-        if isinstance(fields, str):
+        if isinstance(fields, six.string_types):
             return fields in valid_fields
         for field in fields:
             if field not in valid_fields:

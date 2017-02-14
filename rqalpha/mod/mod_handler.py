@@ -14,11 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import six
 from importlib import import_module
 from collections import OrderedDict
 
 
-class ModHandler:
+class ModHandler(object):
     def __init__(self, environment):
         self._env = environment
         self._mod_list = []
@@ -46,5 +47,5 @@ class ModHandler:
             self._mod_dict[mod_name].start_up(self._env, mod_config)
 
     def tear_down(self, *args):
-        for _, module in self._mod_dict.items():
+        for _, module in six.iteritems(self._mod_dict):
             module.tear_down(*args)
