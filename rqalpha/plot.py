@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,14 +14,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .utils.logger import system_log
+from .utils.i18n import gettext
+
 
 def plot_result(result_dict, show_windows=True, savefile=None):
     import os
     from matplotlib import rcParams
+    from matplotlib.font_manager import findfont, FontProperties
+
     rcParams['font.family'] = 'sans-serif'
-    rcParams['font.sans-serif'] = ["Microsoft Yahei", "Heiti SC", "Heiti TC", "STHeiti", "WenQuanYi Zen Hei",
-                                   'WenQuanYi Micro Hei', u"文泉驿微米黑", 'sans-serif']
+    rcParams['font.sans-serif'] = [
+        u'Microsoft Yahei',
+        u'Heiti SC',
+        u'Heiti TC',
+        u'STHeiti',
+        u'WenQuanYi Zen Hei',
+        u'WenQuanYi Micro Hei',
+        u"文泉驿微米黑",
+        u'SimHei',
+    ] + rcParams['font.sans-serif']
     rcParams['axes.unicode_minus'] = False
+
+    use_chinese_fonts = True
+    font = findfont(FontProperties(family=['sans-serif']))
+    if "/matplotlib/" in font:
+        use_chinese_fonts = False
+        system_log.warn("Missing Chinese fonts. Fallback to English.")
+
     import numpy as np
     import matplotlib
     from matplotlib import gridspec
@@ -89,24 +109,27 @@ def plot_result(result_dict, show_windows=True, savefile=None):
     label_height, value_height = 0.8, 0.6
     label_height2, value_height2 = 0.35, 0.15
 
+    def _(txt):
+        return gettext(txt) if use_chinese_fonts else txt
+
     fig_data = [
-        (0.00, label_height, value_height, u"回测收益", "{0:.3%}".format(summary["total_returns"]), red, black),
-        (0.15, label_height, value_height, u"回测年化收益", "{0:.3%}".format(summary["annualized_returns"]), red, black),
-        (0.00, label_height2, value_height2, u"基准收益", "{0:.3%}".format(summary.get("benchmark_total_returns", 0)), blue,
+        (0.00, label_height, value_height, _("Total Returns"), "{0:.3%}".format(summary["total_returns"]), red, black),
+        (0.15, label_height, value_height, _("Annual Returns"), "{0:.3%}".format(summary["annualized_returns"]), red, black),
+        (0.00, label_height2, value_height2, _("Benchmark Returns"), "{0:.3%}".format(summary.get("benchmark_total_returns", 0)), blue,
          black),
-        (0.15, label_height2, value_height2, u"基准年化收益", "{0:.3%}".format(summary.get("benchmark_annualized_returns", 0)),
+        (0.15, label_height2, value_height2, _("Benchmark Annual"), "{0:.3%}".format(summary.get("benchmark_annualized_returns", 0)),
          blue, black),
 
-        (0.30, label_height, value_height, u"Alpha", "{0:.4}".format(summary["alpha"]), black, black),
-        (0.40, label_height, value_height, u"Beta", "{0:.4}".format(summary["beta"]), black, black),
-        (0.55, label_height, value_height, u"Sharpe", "{0:.4}".format(summary["sharpe"]), black, black),
-        (0.70, label_height, value_height, u"Sortino", "{0:.4}".format(summary["sortino"]), black, black),
-        (0.85, label_height, value_height, u"Information Ratio", "{0:.4}".format(summary["information_ratio"]), black, black),
+        (0.30, label_height, value_height, _("Alpha"), "{0:.4}".format(summary["alpha"]), black, black),
+        (0.40, label_height, value_height, _("Beta"), "{0:.4}".format(summary["beta"]), black, black),
+        (0.55, label_height, value_height, _("Sharpe"), "{0:.4}".format(summary["sharpe"]), black, black),
+        (0.70, label_height, value_height, _("Sortino"), "{0:.4}".format(summary["sortino"]), black, black),
+        (0.85, label_height, value_height, _("Information Ratio"), "{0:.4}".format(summary["information_ratio"]), black, black),
 
-        (0.30, label_height2, value_height2, u"Volatility", "{0:.4}".format(summary["volatility"]), black, black),
-        (0.40, label_height2, value_height2, u"最大回撤", "{0:.3%}".format(summary["max_drawdown"]), black, black),
-        (0.55, label_height2, value_height2, u"Tracking Error", "{0:.4}".format(summary["tracking_error"]), black, black),
-        (0.70, label_height2, value_height2, u"Downside Risk", "{0:.4}".format(summary["downside_risk"]), black, black),
+        (0.30, label_height2, value_height2, _("Volatility"), "{0:.4}".format(summary["volatility"]), black, black),
+        (0.40, label_height2, value_height2, _("MaxDrawdown"), "{0:.3%}".format(summary["max_drawdown"]), black, black),
+        (0.55, label_height2, value_height2, _("Tracking Error"), "{0:.4}".format(summary["tracking_error"]), black, black),
+        (0.70, label_height2, value_height2, _("Downside Risk"), "{0:.4}".format(summary["downside_risk"]), black, black),
     ]
 
     ax = plt.subplot(gs[:3, :-1])
@@ -115,7 +138,7 @@ def plot_result(result_dict, show_windows=True, savefile=None):
         ax.text(x, y1, label, color=label_color, fontsize=font_size)
         ax.text(x, y2, value, color=value_color, fontsize=value_font_size)
     for x, y1, y2, label, value, label_color, value_color in [
-        (0.85, label_height2, value_height2, u"最大回撤/最大回撤持续期", max_dd_info, black, black)]:
+        (0.85, label_height2, value_height2, _("MaxDD/MaxDDD"), max_dd_info, black, black)]:
         ax.text(x, y1, label, color=label_color, fontsize=font_size)
         ax.text(x, y2, value, color=value_color, fontsize=8)
 
@@ -128,15 +151,15 @@ def plot_result(result_dict, show_windows=True, savefile=None):
     ax.grid(b=True, which='major', linewidth=1)
 
     # plot two lines
-    ax.plot(total_portfolios["total_returns"], label=u"策略", alpha=1, linewidth=2, color=red)
+    ax.plot(total_portfolios["total_returns"], label=_("strategy"), alpha=1, linewidth=2, color=red)
     if benchmark_portfolios is not None:
-        ax.plot(benchmark_portfolios["total_returns"], label=u"基准", alpha=1, linewidth=2, color=blue)
+        ax.plot(benchmark_portfolios["total_returns"], label=_("benchmark"), alpha=1, linewidth=2, color=blue)
 
     # plot MaxDD/MaxDDD
     ax.plot([index[max_dd_end], index[max_dd_start]], [rt[max_dd_end], rt[max_dd_start]],
-            'v', color='Green', markersize=8, alpha=.7, label=u"最大回撤")
+            'v', color='Green', markersize=8, alpha=.7, label=_("MaxDrawdown"))
     ax.plot([index[max_ddd_start_day], index[max_ddd_end_day]],
-            [rt[max_ddd_start_day], rt[max_ddd_end_day]], 'D', color='Blue', markersize=8, alpha=.7, label=u"最大回撤持续期")
+            [rt[max_ddd_start_day], rt[max_ddd_end_day]], 'D', color='Blue', markersize=8, alpha=.7, label=_("MaxDDD"))
 
     # place legend
     leg = plt.legend(loc="best")

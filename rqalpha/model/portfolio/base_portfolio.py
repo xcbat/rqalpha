@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,8 +27,10 @@ class BasePortfolio(object):
     def __init__(self, cash, start_date, account_type):
         self._account_type = account_type
         self._yesterday_portfolio_value = cash
+        self._yesterday_units = cash
         self._cash = cash
         self._starting_cash = cash
+        self._units = cash
         self._start_date = start_date
         self._current_date = start_date
 
@@ -52,7 +54,23 @@ class BasePortfolio(object):
         """
         【float】当前最新一天的每日收益
         """
-        return 0 if self._yesterday_portfolio_value == 0 else self.daily_pnl / self._yesterday_portfolio_value
+        return 0 if self.yesterday_unit_net_value == 0 else self.unit_net_value / self.yesterday_unit_net_value - 1
+
+    @property
+    def yesterday_unit_net_value(self):
+        return 0 if self._yesterday_units == 0 else self._yesterday_portfolio_value / self._yesterday_units
+
+    @property
+    def unit_net_value(self):
+        return 0 if self._units == 0 else self.portfolio_value / self._units
+
+    @property
+    def yesterday_units(self):
+        return self._yesterday_units
+
+    @property
+    def units(self):
+        return self._units
 
     @property
     def starting_cash(self):

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ class EXECUTION_PHASE(CustomEnum):
     ON_INIT = "[程序初始化]"
     BEFORE_TRADING = "[日内交易前]"
     ON_BAR = "[盘中 handle_bar 函数]"
+    ON_TICK = "[盘中 handle_tick 函数]"
     AFTER_TRADING = "[日内交易后]"
     FINALIZED = "[程序结束]"
     SCHEDULED = "[scheduler函数内]"
@@ -68,6 +69,7 @@ ORDER_STATUS = CustomEnum("ORDER_STATUS", [
     "ACTIVE",
     "FILLED",
     "REJECTED",
+    "PENDING_CANCEL",
     "CANCELLED",
 ])
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,43 +14,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import six
 import os
 import sys
-from datetime import datetime
-import pickle
+import tarfile
+import tempfile
+import datetime
 
+import shutil
+import click
 import jsonpickle.ext.numpy as jsonpickle_numpy
 import pytz
+import requests
+import six
 
-from .core.strategy import Strategy
-from .api import helper as api_helper
 from . import const
-from .analyser.risk_cal import RiskCal
-from .core.default_broker import DefaultBroker
-from .core.default_event_source import DefaultEventSource
-from .core.default_strategy_loader import FileStrategyLoader
+from .api import helper as api_helper
+from .core.strategy_loader import FileStrategyLoader, SourceCodeStrategyLoader
+from .core.strategy import Strategy
 from .core.strategy_universe import StrategyUniverse
+from .core.global_var import GlobalVars
+from .core.strategy_context import StrategyContext
 from .data.base_data_source import BaseDataSource
 from .data.data_proxy import DataProxy
 from .environment import Environment
-from .events import Events
+from .events import EVENT
 from .execution_context import ExecutionContext
 from .interface import Persistable
 from .mod.mod_handler import ModHandler
 from .model.bar import BarMap
-from .trader.account import MixedAccount
-from .trader.global_var import GlobalVars
-from .trader.strategy_context import StrategyContext
-from .utils import create_custom_exception, run_with_user_log_disabled
+from .model.account import MixedAccount
+from .utils import create_custom_exception, run_with_user_log_disabled, scheduler as mod_scheduler
 from .utils.exception import CustomException, is_user_exc, patch_user_exc
 from .utils.i18n import gettext as _
-from .utils.logger import user_log, system_log, user_print, user_detail_log
+from .utils.logger import user_log, user_system_log, system_log, user_print, user_detail_log
 from .utils.persisit_helper import CoreObjectsPersistProxy, PersistHelper
-from .utils.result_aggregator import ResultAggregator
 from .utils.scheduler import Scheduler
-from .utils import scheduler as mod_scheduler
-from .plot import plot_result
+from .utils.config import set_locale
 
 
 jsonpickle_numpy.register_handlers()
@@ -77,12 +76,12 @@ def _validate_benchmark(config, data_proxy):
     if benchmark is None:
         return
     instrument = data_proxy.instruments(benchmark)
+    if instrument is None:
+        raise patch_user_exc(ValueError(_('invalid benchmark {}').format(benchmark)))
+
     if instrument.order_book_id == "000300.XSHG":
         # 000300.XSHG 数据进行了补齐，因此认为只要benchmark设置了000300.XSHG，就存在数据，不受限于上市日期。
         return
-    if not instrument:
-        raise patch_user_exc(ValueError(_('invalid benchmark {}').format(benchmark)))
-
     config = Environment.get_instance().config
     start_date = config.base.start_date
     end_date = config.base.end_date
@@ -109,15 +108,63 @@ def create_base_scope():
     return scope
 
 
-def run(config):
+def update_bundle(data_bundle_path=None, locale="zh_Hans_CN", confirm=True):
+    set_locale(locale)
+    default_bundle_path = os.path.abspath(os.path.expanduser("~/.rqalpha/bundle/"))
+    if data_bundle_path is None:
+        data_bundle_path = default_bundle_path
+    else:
+        data_bundle_path = os.path.abspath(os.path.join(data_bundle_path, './bundle/'))
+    if (confirm and os.path.exists(data_bundle_path) and data_bundle_path != default_bundle_path and
+            os.listdir(data_bundle_path)):
+        click.confirm(_("""
+[WARNING]
+Target bundle path {data_bundle_path} is not empty.
+The content of this folder will be REMOVED before updating.
+Are you sure to continue?""").format(data_bundle_path=data_bundle_path), abort=True)
+
+    day = datetime.date.today()
+    tmp = os.path.join(tempfile.gettempdir(), 'rq.bundle')
+
+    while True:
+        url = 'http://7xjci3.com1.z0.glb.clouddn.com/bundles_v2/rqbundle_%04d%02d%02d.tar.bz2' % (
+            day.year, day.month, day.day)
+        six.print_(_('try {} ...').format(url))
+        r = requests.get(url, stream=True)
+        if r.status_code != 200:
+            day = day - datetime.timedelta(days=1)
+            continue
+
+        out = open(tmp, 'wb')
+        total_length = int(r.headers.get('content-length'))
+
+        with click.progressbar(length=total_length, label=_('downloading ...')) as bar:
+            for data in r.iter_content(chunk_size=8192):
+                bar.update(len(data))
+                out.write(data)
+
+        out.close()
+        break
+
+    shutil.rmtree(data_bundle_path, ignore_errors=True)
+    os.makedirs(data_bundle_path)
+    tar = tarfile.open(tmp, 'r:bz2')
+    tar.extractall(data_bundle_path)
+    tar.close()
+    os.remove(tmp)
+    six.print_(_("Data bundle download successfully in {bundle_path}").format(bundle_path=data_bundle_path))
+
+
+def run(config, source_code=None):
     env = Environment(config)
     persist_helper = None
     init_succeed = False
+    mod_handler = ModHandler()
 
     try:
-        env.set_strategy_loader(FileStrategyLoader())
+        env.set_strategy_loader(FileStrategyLoader() if source_code is None else SourceCodeStrategyLoader())
         env.set_global_vars(GlobalVars())
-        mod_handler = ModHandler(env)
+        mod_handler.set_env(env)
         mod_handler.start_up()
 
         if not env.data_source:
@@ -135,7 +182,8 @@ def run(config):
 
         _validate_benchmark(env.config, env.data_proxy)
 
-        broker = DefaultBroker(env)
+        broker = env.broker
+        assert broker is not None
         env.accounts = accounts = broker.get_accounts()
         env.account = account = MixedAccount(accounts)
 
@@ -145,19 +193,18 @@ def run(config):
         ExecutionContext.config = env.config
 
         event_source = env.event_source
-        if event_source is None:
-            event_source = DefaultEventSource(env.data_proxy, env.config.base.account_list)
+        assert event_source is not None
 
         bar_dict = BarMap(env.data_proxy, config.base.frequency)
         ctx = ExecutionContext(const.EXECUTION_PHASE.GLOBAL, bar_dict)
         ctx._push()
 
         # FIXME
-        start_dt = datetime.combine(config.base.start_date, datetime.min.time())
+        start_dt = datetime.datetime.combine(config.base.start_date, datetime.datetime.min.time())
         env.calendar_dt = ExecutionContext.calendar_dt = start_dt
         env.trading_dt = ExecutionContext.trading_dt = start_dt
 
-        env.event_bus.publish_event(Events.POST_SYSTEM_INIT)
+        env.event_bus.publish_event(EVENT.POST_SYSTEM_INIT)
 
         scope = create_base_scope()
         scope.update({
@@ -167,17 +214,14 @@ def run(config):
         apis = api_helper.get_apis(config.base.account_list)
         scope.update(apis)
 
-        scope = env.strategy_loader.load(env.config.base.strategy_file, scope)
+        scope = env.strategy_loader.load(env.config.base.strategy_file if source_code is None else source_code, scope)
 
         if env.config.extra.enable_profiler:
             enable_profiler(env, scope)
 
-        risk_cal = RiskCal()
-        risk_cal.init(config.base.trading_calendar, is_annualized=True, save_daily_risk=True)
-        result_aggregator = ResultAggregator(env, risk_cal)
-
         ucontext = StrategyContext()
         user_strategy = Strategy(env.event_bus, scope, ucontext)
+        scheduler.set_user_context(ucontext)
 
         if not config.extra.force_run_init_when_pt_resume:
             with run_with_user_log_disabled(disabled=config.base.resume_mode):
@@ -205,6 +249,7 @@ def run(config):
             persist_helper.register('broker', broker)
 
             persist_helper.restore()
+            env.event_bus.publish_event(EVENT.POST_SYSTEM_RESTORED)
 
         init_succeed = True
 
@@ -212,12 +257,13 @@ def run(config):
         # we should run `init` after restore persist data
         if config.extra.force_run_init_when_pt_resume:
             assert config.base.resume_mode == True
-            with run_with_user_log_disabled():
+            with run_with_user_log_disabled(disabled=False):
                 user_strategy.init()
 
-        for calendar_dt, trading_dt, event in event_source.events(config.base.start_date,
-                                                                  config.base.end_date,
-                                                                  config.base.frequency):
+        for event in event_source.events(config.base.start_date, config.base.end_date, config.base.frequency):
+            calendar_dt = event.calendar_dt
+            trading_dt = event.trading_dt
+            event_type = event.event_type
             ExecutionContext.calendar_dt = calendar_dt
             ExecutionContext.trading_dt = trading_dt
             env.calendar_dt = calendar_dt
@@ -225,60 +271,45 @@ def run(config):
             for account in accounts.values():
                 account.portfolio._current_date = trading_dt.date()
 
-            if event == Events.BEFORE_TRADING:
-                env.event_bus.publish_event(Events.PRE_BEFORE_TRADING)
-                broker.before_trading()
-                for account in accounts.values():
-                    account.before_trading()
-                scheduler.next_day_(trading_dt)
-                env.event_bus.publish_event(Events.BEFORE_TRADING)
-                with ExecutionContext(const.EXECUTION_PHASE.BEFORE_TRADING):
-                    scheduler.before_trading_(ucontext)
-                env.event_bus.publish_event(Events.POST_BEFORE_TRADING)
-            elif event == Events.BAR:
+            if event_type == EVENT.BEFORE_TRADING:
+                env.event_bus.publish_event(EVENT.PRE_BEFORE_TRADING)
+                env.event_bus.publish_event(EVENT.BEFORE_TRADING)
+                env.event_bus.publish_event(EVENT.POST_BEFORE_TRADING)
+            elif event_type == EVENT.BAR:
                 bar_dict.update_dt(calendar_dt)
-                broker.update(calendar_dt, trading_dt, bar_dict)
-                for account in accounts.values():
-                    account.on_bar(bar_dict)
-                env.event_bus.publish_event(Events.PRE_BAR)
-                env.event_bus.publish_event(Events.BAR, bar_dict)
-                with ExecutionContext(const.EXECUTION_PHASE.SCHEDULED, bar_dict):
-                    scheduler.next_bar_(ucontext, bar_dict)
-                env.event_bus.publish_event(Events.POST_BAR)
-            elif event == Events.TICK:
-                env.event_bus.publish_event(Events.PRE_TICK)
-                env.event_bus.publish_event(Events.TICK)
-                env.event_bus.publish_event(Events.POST_TICK)
-            elif event == Events.AFTER_TRADING:
-                env.event_bus.publish_event(Events.PRE_AFTER_TRADING)
-                broker.after_trading()
-                for account in accounts.values():
-                    account.after_trading()
-                env.event_bus.publish_event(Events.AFTER_TRADING)
-                env.event_bus.publish_event(Events.POST_AFTER_TRADING)
-            elif event == Events.SETTLEMENT:
-                env.event_bus.publish_event(Events.PRE_SETTLEMENT)
-                for account in accounts.values():
-                    account.settlement()
-                env.event_bus.publish_event(Events.SETTLEMENT)
-                env.event_bus.publish_event(Events.POST_SETTLEMENT)
+                env.event_bus.publish_event(EVENT.PRE_BAR)
+                env.event_bus.publish_event(EVENT.BAR, bar_dict)
+                env.event_bus.publish_event(EVENT.POST_BAR)
+            elif event_type == EVENT.TICK:
+                env.event_bus.publish_event(EVENT.PRE_TICK)
+                env.event_bus.publish_event(EVENT.TICK, event.data['tick'])
+                env.event_bus.publish_event(EVENT.POST_TICK)
+            elif event_type == EVENT.AFTER_TRADING:
+                env.event_bus.publish_event(EVENT.PRE_AFTER_TRADING)
+                env.event_bus.publish_event(EVENT.AFTER_TRADING)
+                env.event_bus.publish_event(EVENT.POST_AFTER_TRADING)
+            elif event_type == EVENT.SETTLEMENT:
+                env.event_bus.publish_event(EVENT.PRE_SETTLEMENT)
+                env.event_bus.publish_event(EVENT.SETTLEMENT)
+                env.event_bus.publish_event(EVENT.POST_SETTLEMENT)
             else:
-                raise RuntimeError('unknown event from event source: {}'.format(event))
+                raise RuntimeError(_('unknown event from event source: {}').format(event))
 
-        strategy_name = os.path.basename(env.config.base.strategy_file).split(".")[0]
-        result_dict = result_aggregator.get_result_dict(strategy_name)
-
-        output_generated_results(env, result_dict)
+        if env.profile_deco:
+            output_profile_result(env)
 
         mod_handler.tear_down(const.EXIT_CODE.EXIT_SUCCESS)
-        system_log.debug("strategy run successfully, normal exit")
-        return result_dict
+        system_log.debug(_("strategy run successfully, normal exit"))
+
+        # FIXME
+        if 'analyser' in env.mod_dict:
+            return env.mod_dict['analyser']._result
     except CustomException as e:
         if init_succeed and env.config.base.persist and persist_helper:
             persist_helper.persist()
 
-        user_detail_log.exception("strategy execute exception")
-        user_log.error(e.error)
+        user_detail_log.exception(_("strategy execute exception"))
+        user_system_log.error(e.error)
         mod_handler.tear_down(const.EXIT_CODE.EXIT_USER_ERROR, e)
     except Exception as e:
         if init_succeed and env.config.base.persist and persist_helper:
@@ -287,13 +318,13 @@ def run(config):
         exc_type, exc_val, exc_tb = sys.exc_info()
         user_exc = create_custom_exception(exc_type, exc_val, exc_tb, config.base.strategy_file)
 
-        user_log.error(user_exc.error)
+        user_system_log.error(user_exc.error)
         code = const.EXIT_CODE.EXIT_USER_ERROR
         if not is_user_exc(exc_val):
-            system_log.exception("strategy execute exception")
+            system_log.exception(_("strategy execute exception"))
             code = const.EXIT_CODE.EXIT_INTERNAL_ERROR
         else:
-            user_detail_log.exception("strategy execute exception")
+            user_detail_log.exception(_("strategy execute exception"))
 
         mod_handler.tear_down(code, user_exc)
 
@@ -315,78 +346,11 @@ def enable_profiler(env, scope):
                     setattr(obj, key, profile_deco(val))
 
 
-def output_generated_results(env, result_dict):
-    # output pickle file
-    if env.config.extra.output_file is not None:
-        pickle.dump(result_dict, open(env.config.extra.output_file, "wb"))
-
-    # plot
-    if env.config.extra.plot:
-        plot_result(result_dict, show_windows=env.config.extra.plot)
-
-    # save plot as image file
-    if env.config.extra.plot_save_file:
-        plot_result(result_dict, show_windows=False,
-                    savefile=env.config.extra.plot_save_file)
-
-    # generate report
-    if env.config.extra.report_save_path:
-        generate_report(result_dict, env.config.extra.report_save_path)
-
-    # output line profiler result
-    if env.profile_deco:  # config.extra.enable_profiler:
-        from six import StringIO
-        # profile_deco.dump_stats("{}.lprof".format(strategy_name))
-        stdout_trap = StringIO()
-        env.profile_deco.print_stats(stdout_trap)
-        profile_output = stdout_trap.getvalue()
-        profile_output = profile_output.rstrip()
-        print(profile_output)
-        env.event_bus.publish_event(Events.ON_LINE_PROFILER_RESULT, profile_output)
-
-
-def generate_report(result_dict, target_report_csv_path):
-    import pandas as pd
+def output_profile_result(env):
     from six import StringIO
-
-    output_path = os.path.join(target_report_csv_path, result_dict["summary"]["strategy_name"])
-    try:
-        os.mkdir(output_path)
-    except:
-        pass
-
-    xlsx_writer = pd.ExcelWriter(os.path.join(output_path, "report.xlsx"), engine='xlsxwriter')
-
-    # summary.csv
-    csv_txt = StringIO()
-    summary = result_dict["summary"]
-    csv_txt.write(u"\n".join(sorted("{},{}".format(key, value) for key, value in six.iteritems(summary))))
-    df = pd.DataFrame(data=[{"val": val} for val in summary.values()], index=summary.keys()).sort_index()
-    df.to_excel(xlsx_writer, sheet_name="summary")
-
-    with open(os.path.join(output_path, "summary.csv"), 'w') as csvfile:
-        csvfile.write(csv_txt.getvalue())
-
-    for name in ["total_portfolios", "stock_portfolios", "future_portfolios",
-                 "stock_positions", "future_positions", "trades"]:
-        try:
-            df = result_dict[name]
-        except KeyError:
-            continue
-
-        # replace all date in dataframe as string
-        if df.index.name == "date":
-            df = df.reset_index()
-            df["date"] = df["date"].apply(lambda x: x.strftime("%Y-%m-%d"))
-            df = df.set_index("date")
-
-        csv_txt = StringIO()
-        csv_txt.write(df.to_csv(encoding='utf-8'))
-
-        df.to_excel(xlsx_writer, sheet_name=name)
-
-        with open(os.path.join(output_path, "{}.csv".format(name)), 'w') as csvfile:
-            csvfile.write(csv_txt.getvalue())
-
-    # report.xls <--- 所有sheet的汇总
-    xlsx_writer.save()
+    stdout_trap = StringIO()
+    env.profile_deco.print_stats(stdout_trap)
+    profile_output = stdout_trap.getvalue()
+    profile_output = profile_output.rstrip()
+    print(profile_output)
+    env.event_bus.publish_event(EVENT.ON_LINE_PROFILER_RESULT, profile_output)

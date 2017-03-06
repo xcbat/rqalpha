@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ..events import Events
+from ..events import EVENT
 from ..utils import run_when_strategy_not_hold
-from ..utils.logger import user_log
+from ..utils.logger import user_system_log
 from ..utils.i18n import gettext as _
 from ..utils.exception import ModifyExceptionFromType
 from ..execution_context import ExecutionContext
@@ -31,27 +31,30 @@ class Strategy(object):
 
         self._init = scope.get('init', None)
         self._handle_bar = scope.get('handle_bar', None)
+        self._handle_tick = scope.get('handle_tick', None)
         func_before_trading = scope.get('before_trading', None)
         if func_before_trading is not None and func_before_trading.__code__.co_argcount > 1:
             self._before_trading = lambda context: func_before_trading(context, None)
-            user_log.warn(_("deprecated parameter[bar_dict] in before_trading function."))
+            user_system_log.warn(_("deprecated parameter[bar_dict] in before_trading function."))
         else:
             self._before_trading = func_before_trading
         self._after_trading = scope.get('after_trading', None)
 
         if self._before_trading is not None:
-            event_bus.add_listener(Events.BEFORE_TRADING, self.before_trading)
+            event_bus.add_listener(EVENT.BEFORE_TRADING, self.before_trading)
         if self._handle_bar is not None:
-            event_bus.add_listener(Events.BAR, self.handle_bar)
+            event_bus.add_listener(EVENT.BAR, self.handle_bar)
+        if self._handle_tick is not None:
+            event_bus.add_listener(EVENT.TICK, self.handle_tick)
         if self._after_trading is not None:
-            event_bus.add_listener(Events.AFTER_TRADING, self.after_trading)
+            event_bus.add_listener(EVENT.AFTER_TRADING, self.after_trading)
 
         self._before_day_trading = scope.get('before_day_trading', None)
         self._before_night_trading = scope.get('before_night_trading', None)
         if self._before_day_trading is not None:
-            user_log.warn(_("[deprecated] before_day_trading is no longer used. use before_trading instead."))
+            user_system_log.warn(_("[deprecated] before_day_trading is no longer used. use before_trading instead."))
         if self._before_night_trading is not None:
-            user_log.warn(_("[deprecated] before_night_trading is no longer used. use before_trading instead."))
+            user_system_log.warn(_("[deprecated] before_night_trading is no longer used. use before_trading instead."))
 
     @property
     def user_context(self):
@@ -65,7 +68,7 @@ class Strategy(object):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._init(self._user_context)
 
-        Environment.get_instance().event_bus.publish_event(Events.POST_USER_INIT)
+        Environment.get_instance().event_bus.publish_event(EVENT.POST_USER_INIT)
 
     @run_when_strategy_not_hold
     def before_trading(self):
@@ -78,6 +81,12 @@ class Strategy(object):
         with ExecutionContext(EXECUTION_PHASE.ON_BAR, bar_dict):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._handle_bar(self._user_context, bar_dict)
+
+    @run_when_strategy_not_hold
+    def handle_tick(self, tick):
+        with ExecutionContext(EXECUTION_PHASE.ON_TICK, tick):
+            with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
+                self._handle_tick(self._user_context, tick)
 
     @run_when_strategy_not_hold
     def after_trading(self):

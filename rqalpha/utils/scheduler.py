@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import datetime
-import inspect
 import json
 
 from dateutil.parser import parse
@@ -23,6 +22,13 @@ from dateutil.parser import parse
 from ..execution_context import ExecutionContext
 from ..utils.exception import patch_user_exc, ModifyExceptionFromType
 from ..const import EXC_TYPE, EXECUTION_PHASE
+from ..environment import Environment
+from ..events import EVENT
+
+try:
+    from inspect import signature
+except ImportError:
+    from funcsigs import signature
 
 
 def market_close(hour=0, minute=0):
@@ -60,7 +66,7 @@ def run_monthly(func, tradingday=None, time_rule=None, **kwargs):
 def _verify_function(name, func):
     if not callable(func):
         raise patch_user_exc(ValueError('scheduler.{}: func should be callable'.format(name)))
-    signature = inspect.signature(func)
+    signature = signature(func)
     if len(signature.parameters) != 2:
         raise patch_user_exc(TypeError(
             'scheduler.{}: func should take exactly 2 arguments (context, bar_dict)'.format(name)))
@@ -81,7 +87,16 @@ class Scheduler(object):
         self._last_minute = 0
         self._current_minute = 0
         self._stage = None
+        self._ucontext = None
         self._frequency = frequency
+
+        event_bus = Environment.get_instance().event_bus
+        event_bus.add_listener(EVENT.PRE_BEFORE_TRADING, self.next_day_)
+        event_bus.add_listener(EVENT.BEFORE_TRADING, self.before_trading_)
+        event_bus.add_listener(EVENT.BAR, self.next_bar_)
+
+    def set_user_context(self, ucontext):
+        self._ucontext = ucontext
 
     @staticmethod
     def _always_true():
@@ -165,11 +180,11 @@ class Scheduler(object):
         self._registry.append((lambda: self._is_nth_trading_day_in_month(tradingday),
                                time_checker, func))
 
-    def next_day_(self, dt):
+    def next_day_(self):
         if len(self._registry) == 0:
             return
 
-        self._today = dt.date()
+        self._today = Environment.get_instance().trading_dt.date()
         self._last_minute = 0
         self._current_minute = 0
         if not self._this_week or self._today > self._this_week[-1]:
@@ -181,21 +196,23 @@ class Scheduler(object):
     def _minutes_since_midnight(hour, minute):
         return hour * 60 + minute
 
-    def next_bar_(self, context, bars):
-        self._current_minute = self._minutes_since_midnight(context.now.hour, context.now.minute)
-        for day_rule, time_rule, func in self._registry:
-            if day_rule() and time_rule():
-                with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
-                    func(context, bars)
-        self._last_minute = self._current_minute
+    def next_bar_(self, bars):
+        with ExecutionContext(EXECUTION_PHASE.SCHEDULED, bars):
+            self._current_minute = self._minutes_since_midnight(self._ucontext.now.hour, self._ucontext.now.minute)
+            for day_rule, time_rule, func in self._registry:
+                if day_rule() and time_rule():
+                    with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
+                        func(self._ucontext, bars)
+            self._last_minute = self._current_minute
 
-    def before_trading_(self, context):
-        self._stage = 'before_trading'
-        for day_rule, time_rule, func in self._registry:
-            if day_rule() and time_rule():
-                with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
-                    func(context, None)
-        self._stage = None
+    def before_trading_(self):
+        with ExecutionContext(EXECUTION_PHASE.BEFORE_TRADING):
+            self._stage = 'before_trading'
+            for day_rule, time_rule, func in self._registry:
+                if day_rule() and time_rule():
+                    with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
+                        func(self._ucontext, None)
+            self._stage = None
 
     def _fill_week(self):
         weekday = self._today.isoweekday()

@@ -20,39 +20,40 @@
 *   起始资金
 *   Benchmark
 
-假如我们的策略存放在了 `./rqalpha/examples/buy_and_hold.py` 路径下， 数据源存放在 `./rqalpha/bundle/` 路径下，回测的起始时间为 `2016-06-01`, 结束时间为 `2016-12-01`，我们给策略分配的起始资金为 `100000`, Benchmark 设置为 `000300.XSHG`
+假如我们的策略存放在了 :code:`./rqalpha/examples/buy_and_hold.py` 路径下， 数据源存放在 :code:`./rqalpha/bundle/` 路径下，回测的起始时间为 :code:`2016-06-01`, 结束时间为 :code:`2016-12-01`，我们给策略分配的起始资金为 :code:`100000`, Benchmark 设置为 :code:`000300.XSHG`
 
 那么我们通过如下命令来运行回测
 
-::
+..  code-block:: bash
 
     rqalpha run -f ./rqalpha/examples/buy_and_hold.py -d ./rqalpha/bundle/ -s 2016-06-01 -e 2016-12-01 --stock-starting-cash 100000 --benchmark 000300.XSHG
 
-如果我们想要以图形的方式查看回测的结果， 则增加 `--plot` 参数
+如果我们想要以图形的方式查看回测的结果， 则增加 :code:`--plot` 参数
 
-::
+..  code-block:: bash
 
     rqalpha run -f ./rqalpha/examples/buy_and_hold.py -d ./rqalpha/bundle/ -s 2016-06-01 -e 2016-12-01 --stock-starting-cash 100000 --benchmark 000300.XSHG --plot
 
 .. image:: ../_static/buy_and_hold.png
 
-如果想把回测的数据保存下来，可以通过 `-o` 参数将结果保存成 `pkl` 文件。
+如果想把回测的数据保存下来，可以通过 :code:`-o` 参数将结果保存成 :code:`pkl` 文件。
 
-::
+..  code-block:: bash
 
     rqalpha run -f ./rqalpha/examples/buy_and_hold.py -d ./rqalpha/bundle/ -s 2016-06-01 -e 2016-12-01 --stock-starting-cash 100000 --benchmark 000300.XSHG --plot -o result.pkl
 
 
-等回测结束后可以通过 `pandas.read_pickle` 函数来读取数据进行之后的数据分析。
+等回测结束后可以通过 :code:`pandas.read_pickle` 函数来读取数据进行之后的数据分析。
 
-::
+..  code-block:: python3
+    :linenos:
 
-    In [1]: import pandas as pd
+    import pandas as pd
 
-    In [2]: result_dict = pd.read_pickle('result.pkl')
+    result_dict = pd.read_pickle('result.pkl')
 
-    In [3]: result_dict.keys()
-    Out[3]: dict_keys(['total_portfolios', 'summary', 'benchmark_portfolios', 'benchmark_positions', 'stock_positions', 'trades', 'stock_portfolios'])
+    result_dict.keys()
+    # [out]dict_keys(['total_portfolios', 'summary', 'benchmark_portfolios', 'benchmark_positions', 'stock_positions', 'trades', 'stock_portfolios'])
 
 更多参数配置请查看 :ref:`api-config`
 
@@ -67,10 +68,11 @@ RQAlpha 的 API 主要分为三类：约定函数、数据查询和交易接口�
 
     *   :func:`init` : 初始化方法，会在程序启动的时候执行
     *   :func:`handle_bar`: bar数据更新时会自动触发调用
-    *   :func:`before_trading`: 会在每天策略交易开始前调用 
+    *   :func:`before_trading`: 会在每天策略交易开始前调用
     *   :func:`after_trading`: 会在每天交易结束后调用
 
-::
+..  code-block:: python3
+    :linenos:
 
     # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
     def init(context):
@@ -91,7 +93,7 @@ RQAlpha 的 API 主要分为三类：约定函数、数据查询和交易接口�
 
     # after_trading函数会在每天交易结束后被调用，当天只会被调用一次
     def after_trading(context):
-        logger.info("开盘前执行after_trading函数")
+        logger.info("收盘后执行after_trading函数")
 
 至此，我们写出了一个“完整”的策略，但是该策略实际上什么也没有做。
 
@@ -111,7 +113,7 @@ RQAlpha 的 API 主要分为三类：约定函数、数据查询和交易接口�
     *   :func:`is_suspended` : 判断某股票当天是否停牌
     *   :func:`is_st_stock` : 判断某股票是否为 \*st
 
-Ricequant 金融、财务、合约历史数据等数据接口，详情请查看 :ref:`api-extend-api`
+Ricequant 金融、财务、合约历史数据等数据接口请查看 :ref:`api-extend-api`
 
 *   bar_dict: 在 :func:`handle_bar` 中我们可以使用 `bar_dict` 来获取相应的 :class:`Bar` 数据，`bar_dict` 是一个字典类型变量，直接通过传 `key` 的方式就可以获取到对应的 :class:`Bar` 数据。
 
@@ -119,7 +121,8 @@ Ricequant 金融、财务、合约历史数据等数据接口，详情请查看 
 
 .. _TA-Lib: https://github.com/mrjbq7/ta-lib
 
-::
+..  code-block:: python3
+    :linenos:
 
     import talib
 
@@ -193,7 +196,8 @@ Ricequant 金融、财务、合约历史数据等数据接口，详情请查看 
 
 我们分别使用 :func:`order_target_value` 和 :func:`order_shares` 进行平仓和开仓的操作，顺便把日志相关的代码删除，就是一个完整的 :ref:`intro-examples-golden-cross` 了。
 
-::
+..  code-block:: python3
+    :linenos:
 
     import talib
 
@@ -242,3 +246,14 @@ Ricequant 金融、财务、合约历史数据等数据接口，详情请查看 
     # after_trading函数会在每天交易结束后被调用，当天只会被调用一次
     def after_trading(context):
         pass
+
+
+可以看到，我们使用 plot 函数绘制内容，也出现在了输出的结果中。
+
+
+.. code-block:: bash
+
+    $ rqalpha run -s 2014-01-01 -e 2016-01-01 -f rqalpha/examples/golden_cross.py -sc 100000 -p -bm 000001.XSHE
+
+
+.. image:: ../_static/golden_cross.png

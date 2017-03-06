@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ from .exception import CustomError, CustomException
 from ..const import EXC_TYPE, INSTRUMENT_TYPE, ACCOUNT_TYPE, UNDERLYING_SYMBOL_PATTERN, NIGHT_TRADING_NS
 from ..utils.datetime_func import TimeRange
 from ..utils.default_future_info import STOCK_TRADING_PERIOD, TRADING_PERIOD_DICT
+from ..utils.i18n import gettext as _
 
 
 def safe_round(value, ndigits=3):
@@ -56,6 +57,10 @@ class RqAttrDict(object):
 
     def __repr__(self):
         return pprint.pformat(self.__dict__)
+
+    def __iter__(self):
+        for k, v in six.iteritems(self.__dict__):
+            yield k, v
 
 
 def dummy_func(*args, **kwargs):
@@ -142,7 +147,7 @@ def run_when_strategy_not_hold(func):
         if not Environment.get_instance().is_strategy_hold:
             return func(*args, **kwargs)
         else:
-            system_log.debug("not run {}({}, {}) because strategy is hold", func, args, kwargs)
+            system_log.debug(_("not run {}({}, {}) because strategy is hold").format(func, args, kwargs))
 
     return wrapper
 
@@ -177,8 +182,15 @@ def instrument_type_str2enum(type_str):
         raise NotImplementedError
 
 
-INST_TYPE_IN_STOCK_ACCOUNT = [INSTRUMENT_TYPE.CS, INSTRUMENT_TYPE.ETF, INSTRUMENT_TYPE.LOF, INSTRUMENT_TYPE.INDX,
-                             INSTRUMENT_TYPE.FENJI_MU, INSTRUMENT_TYPE.FENJI_A, INSTRUMENT_TYPE.FENJI_B]
+INST_TYPE_IN_STOCK_ACCOUNT = [
+    INSTRUMENT_TYPE.CS,
+    INSTRUMENT_TYPE.ETF,
+    INSTRUMENT_TYPE.LOF,
+    INSTRUMENT_TYPE.INDX,
+    INSTRUMENT_TYPE.FENJI_MU,
+    INSTRUMENT_TYPE.FENJI_A,
+    INSTRUMENT_TYPE.FENJI_B
+]
 
 
 def get_account_type(order_book_id):
@@ -254,3 +266,13 @@ def run_with_user_log_disabled(disabled=True):
     finally:
         if disabled:
             user_log.enable()
+
+
+def unwrapper(func):
+    f2 = func
+    while True:
+        f = f2
+        f2 = getattr(f2, "__wrapped__", None)
+        if f2 is None:
+            break
+    return f

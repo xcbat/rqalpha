@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,15 +22,13 @@ try:
 except Exception as e:
     from fastcache import lru_cache
 
-from .. import cache_control
-
 
 class DividendStore(object):
     def __init__(self, f):
         self._table = bcolz.open(f, 'r')
         self._index = self._table.attrs['line_map']
 
-    @lru_cache(cache_control.get_entry_count(128))
+    @lru_cache(128)
     def get_dividend(self, order_book_id):
         try:
             s, e = self._index[order_book_id]

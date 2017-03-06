@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 import click
 
-from ...interface import AbstractMod
-from ...events import Events
+from rqalpha.interface import AbstractMod
+from rqalpha.events import EVENT
 
 
 class ProgressMod(AbstractMod):
@@ -27,8 +27,8 @@ class ProgressMod(AbstractMod):
 
     def start_up(self, env, mod_config):
         self._env = env
-        env.event_bus.add_listener(Events.POST_AFTER_TRADING, self._tick)
-        env.event_bus.add_listener(Events.POST_SYSTEM_INIT, self._init)
+        env.event_bus.add_listener(EVENT.POST_AFTER_TRADING, self._tick)
+        env.event_bus.add_listener(EVENT.POST_SYSTEM_INIT, self._init)
 
     def _init(self):
         trading_length = len(self._env.config.base.trading_calendar)

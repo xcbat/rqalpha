@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,18 +21,16 @@ https://www.ricequant.com/api/python/chn
 
 from __future__ import division
 import six
-from collections import Iterable
 
-from .api_base import assure_order_book_id, decorate_api_exc, instruments
+from .api_base import decorate_api_exc, instruments
 from ..execution_context import ExecutionContext
 from ..model.order import Order, MarketOrder, LimitOrder, OrderStyle
 from ..const import EXECUTION_PHASE, SIDE, POSITION_EFFECT, ORDER_TYPE
 from ..model.instrument import Instrument
 from ..utils.exception import patch_user_exc
-from ..utils.logger import user_log
+from ..utils.logger import user_system_log
 from ..utils.i18n import gettext as _
 from ..utils.arg_checker import apply_rules, verify_that
-from ..environment import Environment
 
 
 __all__ = [
@@ -48,6 +46,7 @@ def export_as_api(func):
 
 
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
+                                EXECUTION_PHASE.ON_TICK,
                                 EXECUTION_PHASE.SCHEDULED)
 @apply_rules(verify_that('id_or_ins').is_valid_future(),
              verify_that('amount').is_greater_than(0),
@@ -74,7 +73,7 @@ def order(id_or_ins, amount, side, position_effect, style):
     r_order = Order.__from_create__(calendar_dt, trading_dt, order_book_id, amount, side, style, position_effect)
 
     if bar.isnan or price == 0:
-        user_log.warn(_("Order Creation Failed: [{order_book_id}] No market data").format(order_book_id=order_book_id))
+        user_system_log.warn(_("Order Creation Failed: [{order_book_id}] No market data").format(order_book_id=order_book_id))
         r_order._mark_rejected(_("Order Creation Failed: [{order_book_id}] No market data").format(order_book_id=order_book_id))
         return r_order
 
@@ -189,6 +188,7 @@ def assure_future_order_book_id(id_or_symbols):
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_INIT,
                                 EXECUTION_PHASE.BEFORE_TRADING,
                                 EXECUTION_PHASE.ON_BAR,
+                                EXECUTION_PHASE.ON_TICK,
                                 EXECUTION_PHASE.AFTER_TRADING,
                                 EXECUTION_PHASE.SCHEDULED)
 @apply_rules(verify_that('underlying_symbol').is_instance_of(str))

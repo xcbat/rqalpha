@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ try:
 except Exception as e:
     from fastcache import lru_cache
 
-from .. import cache_control
 from ..utils.datetime_func import convert_date_to_int, convert_int_to_date
 from ..interface import AbstractDataSource
 from .converter import StockBarConverter, IndexBarConverter
@@ -95,12 +94,12 @@ class BaseDataSource(AbstractDataSource):
     def _index_of(self, instrument):
         return self.INSTRUMENT_TYPE_MAP[instrument.type]
 
-    @lru_cache(cache_control.get_entry_count(None))
+    @lru_cache(None)
     def _all_day_bars_of(self, instrument):
         i = self._index_of(instrument)
         return self._day_bars[i].get_bars(instrument.order_book_id, fields=None)
 
-    @lru_cache(cache_control.get_entry_count(None))
+    @lru_cache(None)
     def _filtered_day_bars(self, instrument):
         bars = self._all_day_bars_of(instrument)
         if bars is None:

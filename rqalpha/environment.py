@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,7 @@
 # limitations under the License.
 
 from .utils.logger import system_log, user_log, user_detail_log
-from .event_bus import EventBus
-from .events import Events
+from .events import EVENT, EventBus
 from .model.commission import init_commission
 
 
@@ -37,6 +36,7 @@ class Environment(object):
         self.user_log = user_log
         self.user_detail_log = user_detail_log
         self.event_bus = EventBus()
+        self._broker = None
         self.account = None
         self.accounts = None
         self.calendar_dt = None
@@ -106,9 +106,16 @@ class Environment(object):
         return self._event_source
 
     @property
+    def broker(self):
+        return self._broker
+
+    def set_broker(self, broker):
+        self._broker = broker
+
+    @property
     def universe(self):
         return self._universe.get()
 
     def update_universe(self, universe):
         self._universe.update(universe)
-        self.event_bus.publish_event(Events.POST_UNIVERSE_CHANGED, universe)
+        self.event_bus.publish_event(EVENT.POST_UNIVERSE_CHANGED, universe)

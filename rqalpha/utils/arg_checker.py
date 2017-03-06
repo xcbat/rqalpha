@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2016 Ricequant, Inc
+# Copyright 2017 Ricequant, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,16 +22,15 @@ import pandas as pd
 from functools import wraps
 
 from dateutil.parser import parse as parse_date
-from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from .exception import RQUserError
 from ..execution_context import ExecutionContext
 from ..model.instrument import Instrument
 from ..environment import Environment
 from ..const import INSTRUMENT_TYPE, RUN_TYPE
-from ..utils import INST_TYPE_IN_STOCK_ACCOUNT
+from ..utils import unwrapper, INST_TYPE_IN_STOCK_ACCOUNT
 from ..utils.i18n import gettext as _
-from ..utils.logger import user_log
+from ..utils.logger import user_system_log
 
 
 main_contract_warning_flag = True
@@ -97,12 +96,12 @@ class ArgumentChecker(object):
                     global main_contract_warning_flag
                     if main_contract_warning_flag:
                         main_contract_warning_flag = False
-                        user_log.warn(_("Main Future contracts[88] are not supported in paper trading."))
+                        user_system_log.warn(_("Main Future contracts[88] are not supported in paper trading."))
                 if "99" in value:
                     global index_contract_warning_flag
                     if index_contract_warning_flag:
                         index_contract_warning_flag = False
-                        user_log.warn(_("Index Future contracts[99] are not supported in paper trading."))
+                        user_system_log.warn(_("Index Future contracts[99] are not supported in paper trading."))
             instrument = ExecutionContext.get_data_proxy().instruments(value)
             if instrument is None:
                 self.raise_not_valid_instrument_error(func_name, self._arg_name, value)
@@ -298,6 +297,7 @@ class ArgumentChecker(object):
         return self
 
     def _are_valid_query_entities(self, func_name, entities):
+        from sqlalchemy.orm.attributes import InstrumentedAttribute
         for e in entities:
             if not isinstance(e, InstrumentedAttribute):
                 raise RQInvalidArgument(
@@ -353,7 +353,7 @@ def apply_rules(*rules):
                 t, v, tb = exc_info
 
                 try:
-                    call_args = inspect.getcallargs(inspect.unwrap(func), *args, **kwargs)
+                    call_args = inspect.getcallargs(unwrapper(func), *args, **kwargs)
                 except TypeError as e:
                     raise RQTypeError(*e.args).with_traceback(tb)
 

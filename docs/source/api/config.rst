@@ -28,7 +28,7 @@
 -s            `- -` start-date                回测起始日期
 -e            `- -` end-date                  回测结束日期(如果是实盘，则忽略该配置)
 -r            `- -` rid                       可以指定回测的唯一ID，用户区分多次回测的结果
--i            `- -` init-cash                 [Deprecated]股票起始资金，不建议使用该参数，使用 `--stock-starting-cash` 代替。
+-i            `- -` init-cash                 [Deprecated]股票起始资金，不建议使用该参数，使用 :code:`--stock-starting-cash` 代替。
 -o            `- -` output-file               指定回测结束时将回测数据输出到指定文件中
 -sc           `- -` stock-starting-cash       股票起始资金，默认为0
 -fc           `- -` future-starting-cash      期货起始资金，默认为0
@@ -36,31 +36,48 @@
 -sp           `- -` slippage                  设置滑点
 -cm           `- -` commission-multiplier     设置手续费乘数，默认为1
 -mm           `- -` margin-multiplier         设置保证金乘数，默认为1
--k            `- -` kind                      设置策略类型，目前支持 `stock` (股票策略)、`future` (期货策略)及 `stock_future` (混合策略)
--fq           `- -` frequency                 目前支持 `1d` (日线回测) 和 `1m` (分钟线回测)，如果要进行分钟线，请注意是否拥有对应的数据源，目前开源版本是不提供对应的数据源的
--me           `- -` match-engine              启用的回测引擎，目前支持 `current_bar` (当前Bar收盘价撮合) 和 `next_bar` (下一个Bar开盘价撮合)
--rt           `- -` run-type                  运行类型，`b` 为回测，`p` 为模拟交易, `r` 为实盘交易
+-st           `- -` strategy-type             设置策略类型，目前支持 :code:`stock` (股票策略)、:code:`future` (期货策略)及 :code:`stock_future` (混合策略)
+-fq           `- -` frequency                 目前支持 :code:`1d` (日线回测) 和 :code:`1m` (分钟线回测)，如果要进行分钟线，请注意是否拥有对应的数据源，目前开源版本是不提供对应的数据源的
+-me           `- -` match-engine              启用的回测引擎，目前支持 :code:`current_bar` (当前Bar收盘价撮合) 和 :code:`next_bar` (下一个Bar开盘价撮合)
+-rt           `- -` run-type                  运行类型，:code:`b` 为回测，:code:`p` 为模拟交易, :code:`r` 为实盘交易
 N/A           `- -` resume                    在模拟交易和实盘交易中，RQAlpha支持策略的pause && resume，该选项表示开启 resume 功能
 N/A           `- -` handle-split              开启自动处理, 默认不开启
 N/A           `- -` not-handle-split          不开启自动处理, 默认不开启
 N/A           `- -` risk-grid                 开启Alpha/Beta 等风险指标的实时计算，默认开启
 N/A           `- -` no-risk-grid              不开启Alpha/Beta 等风险指标的实时计算，默认开启
--l            `- -` log-level                 选择日期的输出等级，有 `verbose` | `info` | `warning` | `error` 等选项，您可以通过设置 `verbose` 来查看最详细的日志，或者设置 `error` 只查看错误级别的日志输出
+N/A           `- -` disable-user-system-log   关闭用户策略产生的系统日志(比如订单未成交等提示)
+-l            `- -` log-level                 选择日期的输出等级，有 :code:`verbose` | :code:`info` | :code:`warning` | :code:`error` 等选项，您可以通过设置 :code:`verbose` 来查看最详细的日志，或者设置 :code:`error` 只查看错误级别的日志输出
 -p            `- -` plot                      在回测结束后，查看图形化的收益曲线
 N/A           `- -` no-plot                   在回测结束后，不查看图形化的收益曲线
-N/A           `- -` fast-match                默认关闭，如果当前撮合引擎为 `current_bar` 开启该选项会立刻进行撮合，不会等到当前bar结束
 N/A           `- -` progress                  开启命令行显示回测进度条
 N/A           `- -` no-progress               关闭命令行查看回测进度
 N/A           `- -` enable-profiler           启动策略逐行性能分析，启动后，在回测结束，会打印策略的运行性能分析报告，可以看到每一行消耗的时间
 N/A           `- -` config                    设置配置文件路径
+-mc           `- -` mod-config                配置 mod ，支持多个。:code:`-mc funcat_api.enabled True` 就可以启动一个 mod
 ===========   =============================   ==============================================================================
 
+对于 mod 的参数传递，可以使用 :code:`-mc` 传递 mod 设置。
 
+- :code:`-mc simple_stock_realtime_trade.enabled True` 启动 simple_stock_realtime_trade 这个 mod。
+- :code:`-mc simple_stock_realtime_trade.fps 60` 设置 simple_stock_realtime_trade 的 fps 参数为 60。
+
+.. code-block:: python3
+
+   rqalpha run -rt p -fq 1m -f strategy.py -sc 100000 -mc simple_stock_realtime_trade.enabled True -mc simple_stock_realtime_trade.fps 60
+
+.. _api-config-file:
 
 通过配置 `config.yml` 的方式
 ------------------------------------------------------
 
-除了在启动策略的时候传入参数，还可以通过指定配置文件的方式来进行参数的配置, 配置文件的配置信息优先级低于启动参数，也就是说启动参数会覆盖配置文件的配置项，配置文件的格式如下::
+除了在启动策略的时候传入参数，还可以通过指定配置文件的方式来进行参数的配置, 配置文件的配置信息优先级低于启动参数，也就是说启动参数会覆盖配置文件的配置项，配置文件的格式如下:
+
+注: 如果没有指定 `config.yml`， RQAlpha 在运行时会自动在 `~/.rqalpha/` 文件夹下创建 `config.yml` 文件作为默认配置文件。您也可以使用 `$ rqalpha generate_config` 来生成一份默认的配置文件。
+
+..  code-block:: bash
+    :linenos:
+
+    version: 0.1.0
 
     # 白名单，设置可以直接在策略代码中指定哪些模块的配置项目
     whitelist: [base, extra, validator, mod]
@@ -69,11 +86,11 @@ N/A           `- -` config                    设置配置文件路径
       # 可以指定回测的唯一ID，用户区分多次回测的结果
       run_id: 9999
       # 数据源所存储的文件路径
-      data_bundle_path: ./bundle/
+      data_bundle_path: ~
       # 启动的策略文件路径
-      strategy_file: ./rqalpha/examples/test.py
+      strategy_file: strategy.py
       # 回测起始日期
-      start_date: 2016-06-01
+      start_date: 2015-06-01
       # 回测结束日期(如果是实盘，则忽略该配置)
       end_date: 2050-01-01
       # 股票起始资金，默认为0
@@ -98,55 +115,82 @@ N/A           `- -` config                    设置配置文件路径
       margin_multiplier: 1
       # 在模拟交易和实盘交易中，RQAlpha支持策略的pause && resume，该选项表示开启 resume 功能
       resume_mode: false
-      # 在模拟交易和实盘交易中，RQAlpha支持策略的pause && resume，该选项表示开启 persist 功能呢，其会在每个bar结束对进行策略的持仓、账户信息，用户的代码上线文等内容进行持久化
+      # 在模拟交易和实盘交易中，RQAlpha支持策略的pause && resume，该选项表示开启 persist 功能呢，
+      # 其会在每个bar结束对进行策略的持仓、账户信息，用户的代码上线文等内容进行持久化
       persist: false
       persist_mode: real_time
       # 选择是否开启自动处理, 默认不开启
       handle_split: false
-      # 选择是否开启Alpha/Beta 等风险指标的实时计算，默认开启
-      cal_risk_grid: true
 
     extra:
-      # 指定回测结束时将回测数据输出到指定文件中
-      output_file: ~
-      # 选择日期的输出等级，有 `verbose` | `info` | `warning` | `error` 等选项，您可以通过设置 `verbose` 来查看最详细的日志，或者设置 `error` 只查看错误级别的日志输出
+      # 选择日期的输出等级，有 `verbose` | `info` | `warning` | `error` 等选项，您可以通过设置 `verbose` 来查看最详细的日志，
+      # 或者设置 `error` 只查看错误级别的日志输出
       log_level: info
+      user_system_log_disabled: false
       # 在回测结束后，选择是否查看图形化的收益曲线
-      plot: false
       context_vars: ~
-
-    service:
-      username: rqalpha@ricequant.com
+      # force_run_init_when_pt_resume: 在PT的resume模式时，是否强制执行用户init。主要用于用户改代码。
+      force_run_init_when_pt_resume: false
+      # enable_profiler: 是否启动性能分析
+      enable_profiler: false
+      is_hold: false
 
     validator:
-      # fast_match: 快速撮合，开启后，不进行队列等待，直接撮合
-      fast_match: false
       # cash_return_by_stock_delisted: 开启该项，当持仓股票退市时，按照退市价格返还现金
       cash_return_by_stock_delisted: false
-      # on_matching: 事中风控，默认开启
-      on_matching: true
-      # limit_order: 对LimitOrder进行撮合验证，主要验证其价格是否合理，默认开启
-      limit_order: true
-      # volume: 对volume进行撮合验证，默认开启
-      volume: true
-      # available_cash: 查可用资金是否充足，默认开启
-      available_cash: true
-      # available_position: 检查可平仓位是否充足，默认开启
-      available_position: true
       # close_amount: 在执行order_value操作时，进行实际下单数量的校验和scale，默认开启
       close_amount: true
       # bar_limit: 在处于涨跌停时，无法买进/卖出，默认开启
       bar_limit: true
 
-    warning:
-      before_trading: true
 
     mod:
+      # 回测 / 模拟交易 支持 Mod
+      simulation:
+        lib: 'rqalpha.mod.simulation'
+        enabled: true
+        priority: 100
+      # 技术分析API
+      funcat_api:
+        lib: 'rqalpha.mod.funcat_api'
+        enabled: false
+        priority: 200
       # 开启该选项，可以在命令行查看回测进度
       progress:
         lib: 'rqalpha.mod.progress'
         enabled: false
         priority: 400
+      # 接收实时行情运行
+      simple_stock_realtime_trade:
+        lib: 'rqalpha.mod.simple_stock_realtime_trade'
+        persist_path: "./persist/strategy/"
+        fps: 3
+        enabled: false
+        priority: 500
+      # 渐进式输出运行结果
+      progressive_output_csv:
+        lib: 'rqalpha.mod.progressive_output_csv'
+        enabled: false
+        output_path: "./"
+        priority: 600
+      risk_manager:
+        lib: 'rqalpha.mod.risk_manager'
+        enabled: true
+        priority: 700
+        # available_cash: 查可用资金是否充足，默认开启
+        available_cash: true
+        # available_position: 检查可平仓位是否充足，默认开启
+        available_position: true
+      analyser:
+        priority: 100
+        enabled: true
+        lib: 'rqalpha.mod.analyser'
+        record: true
+        output_file: ~
+        plot: ~
+        plot_save_file: ~
+        report_save_path: ~
+
 
 通过策略代码的方式
 ------------------------------------------------------
@@ -155,7 +199,10 @@ N/A           `- -` config                    设置配置文件路径
 
 定义一个 `__config__` 的 dict 类型变量，设置具体可配置项和 `config.yml` 中的内容相似，但受到 `config.yml` 中的 `whitelist` 的限制，只能配置指定模块。
 
-范例如下 ::
+范例如下 :
+
+..  code-block:: python3
+    :linenos:
 
     # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
     def init(context):
@@ -202,9 +249,36 @@ N/A           `- -` config                    设置配置文件路径
         },
     }
 
+通过引入 RQAlpha 库的方式执行
+------------------------------------------------------
+
+如果您需要通过代码的方式引入 RQAlpha 来执行则可以使用如下的方式：
+
+.. code-block:: python3
+
+  from rqalpha import run
+
+  config = {
+      "base": {
+          "strategy_file": "./rqalpha/examples/buy_and_hold.py",
+          "start_date": "2016-06-01",
+          "end_date": "2016-12-01",
+          "stock_starting_cash": 100000,
+          "benchmark": "000300.XSHG",
+      },
+      "extra": {
+          "log_level": "verbose",
+      }
+  }
+
+  run(config)
+
+创建一个 :code:`dict` 的变量并传入到 :code:`run` 函数中即可。具体的配置参数可以查看 :ref:`api-config-file` 的 yml 配置。
+
+
 优先级
 ------------------------------------------------------
 
-如果用户不指定 `config.yml`, RQAlpha 会使用默认的 `config.yml` 来配置所有参数的默认项，指定了配置文件，则不再使用默认配置文件，所以相对来说，`config.yml` 的配置方式优先级是最低的。
+如果用户不指定 :code:`config.yml`, RQAlpha 会使用默认的 :code:`config.yml` 来配置所有参数的默认项，指定了配置文件，则不再使用默认配置文件，所以相对来说，:code:`config.yml` 的配置方式优先级是最低的。
 
-策略代码中配置优先级 > 启动策略命令行传参 > 指定 `config.yml` 文件 > 默认 `config.yml` 文件
+策略代码中配置优先级 > 启动策略命令行传参 > 指定 :code:`config.yml` 文件 > 默认 :code:`config.yml` 文件
