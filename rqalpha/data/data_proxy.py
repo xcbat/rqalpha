@@ -17,17 +17,13 @@
 import six
 import numpy as np
 import pandas as pd
-try:
-    # For Python 2 兼容
-    from functools import lru_cache
-except Exception as e:
-    from fastcache import lru_cache
 
 from . import risk_free_helper
 from .instrument_mixin import InstrumentMixin
 from .trading_dates_mixin import TradingDatesMixin
 from ..model.bar import BarObject
 from ..model.snapshot import SnapshotObject
+from ..utils.py2 import lru_cache
 from ..utils.datetime_func import convert_int_to_datetime
 from ..const import HEDGE_TYPE
 
@@ -67,6 +63,10 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
     def get_dividend(self, order_book_id, adjusted=True):
         return self._data_source.get_dividend(order_book_id, adjusted)
 
+    @lru_cache(128)
+    def get_split(self, order_book_id):
+        return self._data_source.get_split(order_book_id)
+
     def get_dividend_by_book_date(self, order_book_id, date, adjusted=True):
         df = self.get_dividend(order_book_id, adjusted)
         if df is None or df.empty:
@@ -79,6 +79,15 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
             return None
 
         return df.iloc[pos]
+
+    def get_split_by_ex_date(self, order_book_id, date):
+        df = self.get_split(order_book_id)
+        if df is None or df.empty:
+            return
+        try:
+            return df.loc[date]
+        except KeyError:
+            pass
 
     @lru_cache(10240)
     def _get_prev_close(self, order_book_id, dt):
@@ -111,6 +120,10 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
         if instrument.type != 'Future':
             return np.nan
         return self._data_source.get_settle_price(instrument, date)
+
+    def get_last_price(self, order_book_id, dt):
+        instrument = self.instruments(order_book_id)
+        return self._data_source.get_last_price(instrument, dt)
 
     def get_bar(self, order_book_id, dt, frequency='1d'):
         instrument = self.instruments(order_book_id)
@@ -149,4 +162,5 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
         return self._data_source.available_data_range(frequency)
 
     def get_future_info(self, order_book_id, hedge_type=HEDGE_TYPE.SPECULATION):
-        return self._data_source.get_future_info(order_book_id, hedge_type)
+        instrument = self.instruments(order_book_id)
+        return self._data_source.get_future_info(instrument, hedge_type)

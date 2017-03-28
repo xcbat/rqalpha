@@ -14,12 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import click
 import errno
 import os
 import shutil
-import ruamel.yaml as yaml
 from importlib import import_module
+
+import six
+import click
+import ruamel.yaml as yaml
 
 from .utils.click_helper import Date
 from .utils.config import parse_config, get_default_config_path, load_config, dump_config
@@ -33,6 +35,36 @@ def cli(ctx, verbose):
 
 
 def entry_point():
+    from rqalpha.mod import SYSTEM_MOD_LIST
+    from rqalpha.utils.config import get_default_config_path
+    from rqalpha.utils.package_helper import import_mod
+    mod_config_path = get_default_config_path("mod_config")
+    mod_config = load_config(mod_config_path, loader=yaml.RoundTripLoader, verify_version=False)
+
+    for mod_name, config in six.iteritems(mod_config['mod']):
+        lib_name = "rqalpha_mod_{}".format(mod_name)
+        if not config['enabled']:
+            continue
+        if mod_name in SYSTEM_MOD_LIST:
+            # inject system mod
+            import_mod("rqalpha.mod." + lib_name)
+        else:
+            # inject third part mod
+            import_mod(lib_name)
+
+    # 原本是注入系统中所有的Mod对应的命令，现在修改为只注入用户启动的Mod对应的命令
+
+    # from . import mod
+    # from pkgutil import iter_modules
+    # from rqalpha.utils.package_helper import import_mod
+    # # inject system mod
+    # for package_name in mod.SYSTEM_MOD_LIST:
+    #     import_mod("rqalpha.mod.rqalpha_mod_" + package_name)
+    # # inject user mod
+    # for package in iter_modules():
+    #     if "rqalpha_mod_" in package[1]:
+    #         import_mod(package[1])
+
     cli(obj={})
 
 
@@ -54,16 +86,12 @@ def update_bundle(data_bundle_path, locale):
 @click.option('-f', '--strategy-file', 'base__strategy_file', type=click.Path(exists=True))
 @click.option('-s', '--start-date', 'base__start_date', type=Date())
 @click.option('-e', '--end-date', 'base__end_date', type=Date())
-@click.option('-r', '--rid', 'base__run_id', type=click.STRING)
 @click.option('-sc', '--stock-starting-cash', 'base__stock_starting_cash', type=click.FLOAT)
 @click.option('-fc', '--future-starting-cash', 'base__future_starting_cash', type=click.FLOAT)
 @click.option('-bm', '--benchmark', 'base__benchmark', type=click.STRING, default=None)
-@click.option('-sp', '--slippage', 'base__slippage', type=click.FLOAT)
-@click.option('-cm', '--commission-multiplier', 'base__commission_multiplier', type=click.FLOAT)
 @click.option('-mm', '--margin-multiplier', 'base__margin_multiplier', type=click.FLOAT)
-@click.option('-st', '--strategy-type', 'base__strategy_type', type=click.Choice(['stock', 'future', 'stock_future']))
+@click.option('-st', '--security', 'base__securities', multiple=True, type=click.Choice(['stock', 'future']))
 @click.option('-fq', '--frequency', 'base__frequency', type=click.Choice(['1d', '1m']))
-@click.option('-me', '--match-engine', 'base__matching_type', type=click.Choice(['current_bar', 'next_bar']))
 @click.option('-rt', '--run-type', 'base__run_type', type=click.Choice(['b', 'p']), default="b")
 @click.option('--resume', 'base__resume_mode', is_flag=True)
 @click.option('--handle-split/--not-handle-split', 'base__handle_split', default=None, help="handle split")
@@ -72,21 +100,14 @@ def update_bundle(data_bundle_path, locale):
 @click.option('--locale', 'extra__locale', type=click.Choice(['cn', 'en']), default="cn")
 @click.option('--disable-user-system-log', 'extra__user_system_log_disabled', is_flag=True, help='disable user system log')
 @click.option('--extra-vars', 'extra__context_vars', type=click.STRING, help="override context vars")
-@click.option("--enable-profiler", "extra__enable_profiler", is_flag=True,
-              help="add line profiler to profile your strategy")
+@click.option("--enable-profiler", "extra__enable_profiler", is_flag=True, help="add line profiler to profile your strategy")
 @click.option('--config', 'config_path', type=click.STRING, help="config file path")
 # -- Mod Configuration
 @click.option('-mc', '--mod-config', 'mod_configs', nargs=2, multiple=True, type=click.STRING, help="mod extra config")
-@click.option('-p', '--plot/--no-plot', 'mod__analyser__plot', default=None, help="plot result")
-@click.option('--plot-save', 'mod__analyser__plot_save_file', default=None, help="save plot to file")
-@click.option('--report', 'mod__analyser__report_save_path', type=click.Path(writable=True), help="save report")
-@click.option('-o', '--output-file', 'mod__analyser__output_file', type=click.Path(writable=True),
-              help="output result pickle file")
-@click.option('--progress/--no-progress', 'mod__progress__enabled', default=None, help="show progress bar")
-@click.option('--short-stock', 'mod__risk_manager__short_stock', is_flag=True, help="enable stock shorting")
-# -- DEPRECATED ARGS && WILL BE REMOVED AFTER VERSION 1.0.0
-@click.option('-i', '--init-cash', 'base__stock_starting_cash', type=click.FLOAT)
-@click.option('-k', '--kind', 'base__strategy_type', type=click.Choice(['stock', 'future', 'stock_future']))
+# -- DEPRECATED ARGS && WILL BE REMOVED AFTER VERSION 3.0.0
+@click.option('-i', '--init-cash', 'base__stock_starting_cash', type=click.FLOAT, help="[Deprecated]")
+@click.option('-k', '--kind', 'base__securities', type=click.Choice(['stock', 'future', 'stock_future']), help="[Deprecated]")
+@click.option('--strategy-type', 'base__securities', type=click.Choice(['stock', 'future']), help="[Deprecated]")
 def run(**kwargs):
     """
     Start to run a strategy
@@ -115,38 +136,6 @@ def examples(directory):
 
 
 @cli.command()
-@click.argument('result_dict_file', type=click.Path(exists=True), required=True)
-@click.option('--show/--hide', 'is_show', default=True)
-@click.option('--plot-save', 'plot_save_file', default=None, type=click.Path(), help="save plot result to file")
-def plot(result_dict_file, is_show, plot_save_file):
-    """
-    Draw result DataFrame
-    """
-    import pandas as pd
-    from rqalpha.plot import plot_result
-
-    result_dict = pd.read_pickle(result_dict_file)
-    if is_show:
-        plot_result(result_dict)
-    if plot_save_file:
-        plot_result(result_dict, show_windows=False, savefile=plot_save_file)
-
-
-@cli.command()
-@click.argument('result_pickle_file_path', type=click.Path(exists=True), required=True)
-@click.argument('target_report_csv_path', type=click.Path(exists=True, writable=True), required=True)
-def report(result_pickle_file_path, target_report_csv_path):
-    """
-    Generate report from backtest output file
-    """
-    import pandas as pd
-    result_dict = pd.read_pickle(result_pickle_file_path)
-
-    from rqalpha.utils.report import generate_report
-    generate_report(result_dict, target_report_csv_path)
-
-
-@cli.command()
 @click.option('-v', '--verbose', is_flag=True)
 def version(**kwargs):
     """
@@ -170,164 +159,168 @@ def generate_config(directory):
 
 # For Mod Cli
 
-system_mod = [
-    'simulation',
-    'funcat_api',
-    'progress',
-    'simple_stock_realtime_trade',
-    'progressive_output_csv',
-    'risk_manager',
-    'analyser',
-]
-
-
 @cli.command(context_settings=dict(
     ignore_unknown_options=True,
 ))
+@click.help_option('-h', '--help')
+@click.argument('cmd', nargs=1, type=click.Choice(['list', 'enable', 'disable', 'install', 'uninstall']))
 @click.argument('params', nargs=-1)
-def install(params):
+def mod(cmd, params):
     """
-    Install third-party Mod
+    Mod management command
+
+    rqalpha mod list \n
+    rqalpha mod install xxx \n
+    rqalpha mod uninstall xxx \n
+    rqalpha mod enable xxx \n
+    rqalpha mod disable xxx \n
+
     """
-    from pip import main as pip_main
-    from pip.commands.install import InstallCommand
+    def list(params):
+        """
+        List all mod configuration
+        """
+        from colorama import init, Fore
+        from tabulate import tabulate
+        init()
+        mod_config_path = get_default_config_path("mod_config")
+        mod_config = load_config(mod_config_path, loader=yaml.RoundTripLoader, verify_version=False)
 
-    params = [param for param in params]
+        table = []
 
-    options, mod_list = InstallCommand().parse_args(params)
+        for mod_name, mod in six.iteritems(mod_config['mod']):
+            table.append([
+                Fore.RESET + mod_name,
+                Fore.GREEN + "enabled" + Fore.RESET if mod['enabled'] else Fore.RED + "disabled" + Fore.RESET
+            ])
 
-    params = ["install"] + params
+        headers = [
+            Fore.CYAN + "name",
+            Fore.CYAN + "status" + Fore.RESET
+        ]
 
-    for mod_name in mod_list:
-        mod_name_index = params.index(mod_name)
-        if mod_name in system_mod:
-            print('System Mod can not be installed or uninstalled')
-            return
-        if "rqalpha_mod_" in mod_name:
-            lib_name = mod_name
-            mod_name = lib_name.replace("rqalpha_mod_", "")
-        else:
-            lib_name = "rqalpha_mod_" + mod_name
-        params[mod_name_index] = lib_name
+        print(tabulate(table, headers=headers, tablefmt="psql"))
+        print(Fore.LIGHTYELLOW_EX + "You can use `rqalpha mod list/install/uninstall/enable/disable` to manage your mods")
 
-    # Install Mod
-    pip_main(params)
+    def install(params):
+        """
+        Install third-party Mod
+        """
+        from pip import main as pip_main
+        from pip.commands.install import InstallCommand
 
-    # Export config
-    config_path = get_default_config_path()
-    config = load_config(config_path, loader=yaml.RoundTripLoader)
+        params = [param for param in params]
 
-    for mod_name in mod_list:
-        if "rqalpha_mod_" in mod_name:
-            lib_name = mod_name
-            mod_name = lib_name.replace("rqalpha_mod_", "")
-        else:
-            lib_name = "rqalpha_mod_" + mod_name
+        options, mod_list = InstallCommand().parse_args(params)
 
-        mod = import_module(lib_name)
+        params = ["install"] + params
 
-        mod_config = yaml.load(mod.__mod_config__, yaml.RoundTripLoader)
+        for mod_name in mod_list:
+            mod_name_index = params.index(mod_name)
+            if mod_name.startswith("rqalpha_mod_sys_"):
+                print('System Mod can not be installed or uninstalled')
+                return
+            if "rqalpha_mod_" in mod_name:
+                lib_name = mod_name
+                mod_name = lib_name.replace("rqalpha_mod_", "")
+            else:
+                lib_name = "rqalpha_mod_" + mod_name
+            params[mod_name_index] = lib_name
 
-        config['mod'][mod_name] = mod_config
-        config['mod'][mod_name]['lib'] = lib_name
-        config['mod'][mod_name]['enabled'] = False
-        config['mod'][mod_name]['priority'] = 1000
+        # Install Mod
+        pip_main(params)
 
-    dump_config(config_path, config)
+        # Export config
+        mod_config_path = get_default_config_path("mod_config")
+        mod_config = load_config(mod_config_path, loader=yaml.RoundTripLoader, verify_version=False)
 
+        for mod_name in mod_list:
+            mod_config['mod'][mod_name] = {}
+            mod_config['mod'][mod_name]['enabled'] = False
 
-@cli.command(context_settings=dict(
-    ignore_unknown_options=True,
-))
-@click.argument('params', nargs=-1)
-def uninstall(params):
-    """
-    Uninstall third-party Mod
-    """
-    from pip import main as pip_main
-    from pip.commands.uninstall import UninstallCommand
+        dump_config(mod_config_path, mod_config)
+        list({})
 
-    params = [param for param in params]
+    def uninstall(params):
+        """
+        Uninstall third-party Mod
+        """
 
-    options, mod_list = UninstallCommand().parse_args(params)
+        from pip import main as pip_main
+        from pip.commands.uninstall import UninstallCommand
 
-    params = ["uninstall"] + params
+        params = [param for param in params]
 
-    for mod_name in mod_list:
-        mod_name_index = params.index(mod_name)
-        if mod_name in system_mod:
-            print('System Mod can not be installed or uninstalled')
-            return
-        if "rqalpha_mod_" in mod_name:
-            lib_name = mod_name
-            mod_name = lib_name.replace("rqalpha_mod_", "")
-        else:
-            lib_name = "rqalpha_mod_" + mod_name
-        params[mod_name_index] = lib_name
+        options, mod_list = UninstallCommand().parse_args(params)
 
-    # Uninstall Mod
-    pip_main(params)
+        params = ["uninstall"] + params
 
-    # Remove Mod Config
-    config_path = get_default_config_path()
-    config = load_config(config_path, loader=yaml.RoundTripLoader)
+        for mod_name in mod_list:
+            mod_name_index = params.index(mod_name)
+            if mod_name.startswith("rqalpha_mod_sys_"):
+                print('System Mod can not be installed or uninstalled')
+                return
+            if "rqalpha_mod_" in mod_name:
+                lib_name = mod_name
+            else:
+                lib_name = "rqalpha_mod_" + mod_name
+            params[mod_name_index] = lib_name
 
-    for mod_name in mod_list:
+        # Uninstall Mod
+        pip_main(params)
+
+        # Remove Mod Config
+        mod_config_path = get_default_config_path("mod_config")
+        mod_config = load_config(mod_config_path, loader=yaml.RoundTripLoader, verify_version=False)
+
+        for mod_name in mod_list:
+            if "rqalpha_mod_" in mod_name:
+                mod_name = mod_name.replace("rqalpha_mod_", "")
+
+            del mod_config['mod'][mod_name]
+
+        dump_config(mod_config_path, mod_config)
+        list({})
+
+    def enable(params):
+        """
+        enable mod
+        """
+        mod_name = params[0]
         if "rqalpha_mod_" in mod_name:
             mod_name = mod_name.replace("rqalpha_mod_", "")
 
-        del config['mod'][mod_name]
+        # check whether is installed
+        module_name = "rqalpha_mod_" + mod_name
+        try:
+            import_module(module_name)
+        except ImportError:
+            install([module_name])
 
-    dump_config(config_path, config)
+        config_path = get_default_config_path("mod_config")
+        config = load_config(config_path, loader=yaml.RoundTripLoader, verify_version=False)
 
-
-@cli.command()
-def list():
-    """
-    List all mod configuration
-    """
-    config_path = get_default_config_path()
-    config = load_config(config_path, loader=yaml.RoundTripLoader)
-
-    print(yaml.dump(config['mod'], Dumper=yaml.RoundTripDumper))
-
-
-@cli.command()
-@click.argument('mod_name')
-def enable(mod_name):
-    """
-    enable mod
-    """
-    if mod_name not in system_mod and "rqalpha_mod_" in mod_name:
-        mod_name = mod_name.replace("rqalpha_mod_", "")
-
-    config_path = get_default_config_path()
-    config = load_config(config_path, loader=yaml.RoundTripLoader)
-
-    try:
         config['mod'][mod_name]['enabled'] = True
         dump_config(config_path, config)
-    except Exception as e:
-        pass
+        list({})
 
+    def disable(params):
+        """
+        disable mod
+        """
+        mod_name = params[0]
 
-@cli.command()
-@click.argument('mod_name')
-def disable(mod_name):
-    """
-    disable mod
-    """
-    if mod_name not in system_mod and "rqalpha_mod_" in mod_name:
-        mod_name = mod_name.replace("rqalpha_mod_", "")
+        if "rqalpha_mod_" in mod_name:
+            mod_name = mod_name.replace("rqalpha_mod_", "")
 
-    config_path = get_default_config_path()
-    config = load_config(config_path, loader=yaml.RoundTripLoader)
+        config_path = get_default_config_path("mod_config")
+        config = load_config(config_path, loader=yaml.RoundTripLoader, verify_version=False)
 
-    try:
         config['mod'][mod_name]['enabled'] = False
         dump_config(config_path, config)
-    except Exception as e:
-        pass
+        list({})
+
+    locals()[cmd](params)
 
 
 if __name__ == '__main__':

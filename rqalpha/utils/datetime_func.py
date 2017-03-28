@@ -13,14 +13,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 
 from collections import namedtuple
-try:
-    # For Python 2 兼容
-    from functools import lru_cache
-except Exception as e:
-    from fastcache import lru_cache
-import datetime
+
+from .py2 import lru_cache
 
 
 TimeRange = namedtuple('TimeRange', ['start', 'end'])
@@ -81,4 +78,3 @@ def convert_int_to_datetime(dt_int):
     hour, r = divmod(r, 10000)
     minute, second = divmod(r, 100)
     return datetime.datetime(year, month, day, hour, minute, second)
-

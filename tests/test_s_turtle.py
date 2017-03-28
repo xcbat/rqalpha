@@ -113,27 +113,24 @@ def handle_bar(context, bar_dict):
 
     context.pre_trading_signal = context.trading_signal
 
+
 __config__ = {
     "base": {
-        "strategy_type": "stock",
+        "securities": "stock",
         "start_date": "2008-07-01",
         "end_date": "2014-09-01",
         "frequency": "1d",
         "matching_type": "current_bar",
         "stock_starting_cash": 1000000,
         "benchmark": "000300.XSHG",
-        "slippage": 0.00123,
     },
     "extra": {
         "log_level": "error",
     },
     "mod": {
-        "progress": {
+        "sys_progress": {
             "enabled": True,
-            "priority": 400,
+            "show": True,
         },
-    },
-    "validator": {
-        "bar_limit": False,
     },
 }

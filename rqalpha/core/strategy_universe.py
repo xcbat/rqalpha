@@ -18,7 +18,7 @@ import json
 
 import six
 
-from ..events import EVENT
+from ..events import EVENT, Event
 from ..environment import Environment
 from ..model.instrument import Instrument
 
@@ -39,17 +39,18 @@ class StrategyUniverse(object):
         if isinstance(universe, (six.string_types, Instrument)):
             universe = [universe]
         self._set = set(universe)
-        Environment.get_instance().event_bus.publish_event(EVENT.POST_UNIVERSE_CHANGED, self._set)
+        Environment.get_instance().event_bus.publish_event(Event(EVENT.POST_UNIVERSE_CHANGED, universe=self._set))
 
     def get(self):
         return self._set
 
-    def _clear_de_listed(self):
+    def _clear_de_listed(self, event):
         de_listed = set()
+        env = Environment.get_instance()
         for o in self._set:
-            i = Environment.get_instance().data_proxy.instruments(o)
-            if i.de_listed_date <= Environment.get_instance().trading_dt:
+            i = env.data_proxy.instruments(o)
+            if i.de_listed_date <= env.trading_dt:
                 de_listed.add(o)
         if de_listed:
             self._set -= de_listed
-            Environment.get_instance().event_bus.publish_event(EVENT.POST_UNIVERSE_CHANGED, self._set)
+            env.event_bus.publish_event(Event(EVENT.POST_UNIVERSE_CHANGED, universe=self._set))

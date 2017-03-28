@@ -122,7 +122,7 @@ def handle_bar(context, bar_dict):
 
 __config__ = {
     "base": {
-        "strategy_type": "future",
+        "securities": "future",
         "start_date": "2014-06-01",
         "end_date": "2015-08-01",
         "frequency": "1d",
@@ -134,12 +134,9 @@ __config__ = {
         "log_level": "error",
     },
     "mod": {
-        "progress": {
+        "sys_progress": {
             "enabled": True,
-            "priority": 400,
+            "show": True,
         },
     },
-    "validator": {
-        "bar_limit": True,
-    }
 }

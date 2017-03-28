@@ -65,7 +65,7 @@ def handle_bar(context, bar_dict):
 
 __config__ = {
     "base": {
-        "strategy_type": "stock",
+        "securities": "stock",
         "start_date": "2013-01-01",
         "end_date": "2015-12-29",
         "frequency": "1d",
@@ -78,9 +78,9 @@ __config__ = {
         "log_level": "error",
     },
     "mod": {
-        "progress": {
+        "sys_progress": {
             "enabled": True,
-            "priority": 400,
+            "show": True,
         },
     },
 }

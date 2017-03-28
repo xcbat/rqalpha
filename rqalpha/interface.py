@@ -16,7 +16,6 @@
 
 import abc
 
-
 from six import with_metaclass
 
 
@@ -29,7 +28,7 @@ class AbstractStrategyLoader(with_metaclass(abc.ABCMeta)):
     @abc.abstractmethod
     def load(self, strategy, scope):
         """
-        【Required】
+        [Required]
 
         load 函数负责组装策略代码和策略代码所在的域，并输出最终组装好的可执行域。
 
@@ -51,7 +50,7 @@ class AbstractEventSource(with_metaclass(abc.ABCMeta)):
     @abc.abstractmethod
     def events(self, start_date, end_date, frequency):
         """
-        【Required】
+        [Required]
 
         扩展 EventSource 必须实现 events 函数。
 
@@ -71,6 +70,28 @@ class AbstractEventSource(with_metaclass(abc.ABCMeta)):
 
         :return: None
         """
+        raise NotImplementedError
+
+
+class AbstractPriceBoard(with_metaclass(abc.ABCMeta)):
+    """
+    RQAlpha多个地方需要使用最新价格，不同的数据源其最新价格获取的方式不尽相同
+
+    因此抽离出 `AbstractPriceBoard`, 您可以自行进行扩展并替换默认 PriceBoard
+    """
+    @abc.abstractmethod
+    def get_last_price(self, order_book_id):
+        """
+        获取证券的最新价格
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_limit_up(self, order_book_id):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_limit_down(self, order_book_id):
         raise NotImplementedError
 
 
@@ -236,11 +257,11 @@ class AbstractDataSource(object):
         """
         raise NotImplementedError
 
-    def get_future_info(self, order_book_id, hedge_type):
+    def get_future_info(self, instrument, hedge_type):
         """
         获取期货合约手续费、保证金等数据
 
-        :param str order_book_id: 合约名
+        :param instrument: 合约对象
         :param HEDGE_TYPE hedge_type: 枚举类型，账户对冲类型
         :return: dict
         """
@@ -256,24 +277,21 @@ class AbstractBroker(with_metaclass(abc.ABCMeta)):
 
     在扩展模块中，可以通过调用 ``env.set_broker`` 来替换默认的 Broker。
     """
+
     @abc.abstractmethod
-    def get_accounts(self):
+    def get_portfolio(self):
         """
         [Required]
 
-        获取账号信息。系统初始化时，RQAlpha 会调用此接口，获取账户信息。
+        获取投资组合。系统初始化时，会调用此接口，获取包含账户信息、净值、份额等内容的投资组合
 
-        RQAlpha 支持混合策略，因此返回的账户信息为一个字典(dict)，key 为账户类型（``rqalpha.const.ACCOUNT_TYPE``)，
-        value 为对应的 :class:`~Account` 对象。
-
-        :return: dict
+        :return: Portfolio
         """
-        raise NotImplementedError
 
     @abc.abstractmethod
     def submit_order(self, order):
         """
-        【Required】
+        [Required]
 
         提交订单。在当前版本，RQAlpha 会生成 :class:`~Order` 对象，再通过此接口提交到 Broker。
         TBD: 由 Broker 对象生成 Order 并返回？
@@ -283,7 +301,7 @@ class AbstractBroker(with_metaclass(abc.ABCMeta)):
     @abc.abstractmethod
     def cancel_order(self, order):
         """
-        【Required】
+        [Required]
 
         撤单。
 
@@ -293,45 +311,15 @@ class AbstractBroker(with_metaclass(abc.ABCMeta)):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_open_orders(self):
+    def get_open_orders(self, order_book_id=None):
         """
-        【Required】
+        [Required]
 
         获得当前未完成的订单。
 
         :return: list[:class:`~Order`]
         """
         raise NotImplementedError
-
-    def before_trading(self):
-        """
-        【Optional】
-
-        RQAlpha 会在 `EVENT.BEFORE_TRADING` 事件被触发前调用此接口。
-        """
-        pass
-
-    def after_trading(self):
-        """
-        【Optional】
-
-        RQAlpha 会在 `EVENT.AFTER_TRADING` 事件被触发前调用此接口。
-        """
-        pass
-
-    def bar(self, bar_dict):
-        """
-        【Optional】
-
-        RQAlpha 会在 `EVENT.BAR` 事件被出发前调用此接口。
-
-        Broker 根据自己的业务场景来选择是否实现，比如说自带撮合引擎的Broker，会通过 `update` 函数来触发撮合。
-
-        :param calendar_dt: 实际时间
-        :param trading_dt: 交易时间
-        :param bar_dict: dict[:class:`~BarObject`]
-        """
-        pass
 
 
 class AbstractMod(with_metaclass(abc.ABCMeta)):
@@ -409,3 +397,15 @@ class Persistable(with_metaclass(abc.ABCMeta)):
                     any("set_state" in B.__dict__ for B in C.__mro__)):
                 return True
         return NotImplemented
+
+
+class AbstractFrontendValidator(with_metaclass(abc.ABCMeta)):
+    @abc.abstractmethod
+    def can_submit_order(self, account, order):
+        # FIXME need a better name
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def can_cancel_order(self, account, order):
+        # FIXME need a better name
+        raise NotImplementedError

@@ -24,7 +24,6 @@ install:
   # Install bcolz
   - pip install Cython
   - pip install bcolz
-  - pip install -r requirements.txt
 
   # Install Test Deps
   - pip install TA-Lib
@@ -33,15 +32,16 @@ install:
   - pip install funcat
   - pip install .
 script:
-  - ls $HOME/.rqalpha/bundle/
+  - ls -al $HOME/.rqalpha/
+  - ls -al $HOME/.rqalpha/bundle/
   - |
-      if [ ! -d $HOME/.rqalpha/config.yml ]; then
+      if [ ! -f $HOME/.rqalpha/bundle/instruments.pk ]; then
         rqalpha update_bundle
       fi
   - coverage run --source=rqalpha test.py
 cache:
   directories:
     - $HOME/.cache/pip
-    - $HOME/.rqalpha
+    - $HOME/.rqalpha/bundle
 after_success:
   coveralls

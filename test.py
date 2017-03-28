@@ -29,12 +29,9 @@ import coverage
 
 from rqalpha import run
 from rqalpha.utils.logger import system_log
-from rqalpha.utils.config import parse_config
-
 
 TEST_DIR = os.path.abspath("./tests/")
 TEST_OUT = os.path.abspath("./tests/outs/")
-
 
 pd.set_option("display.width", 160)
 
@@ -54,7 +51,7 @@ def get_test_files(file_path=None):
             system_log.exception()
             error_map[filename.replace(".py", "")] = e
     for filename, result_data in iteritems(error_map):
-        print("*" * 20, "【{}】did not pass!".format(filename), "*" * 20)
+        print(u"*" * 20, u"[{}]did not pass!".format(filename), u"*" * 20)
         if isinstance(result_data, Exception):
             system_log.error(result_data)
         else:
@@ -64,8 +61,8 @@ def get_test_files(file_path=None):
             # print("+" * 10, "new test Dataframe: ", "+" * 10)
             # print(df.drop(result.columns[result.all()], axis=1))
             print(result.all())
-    print("=" * 40)
-    print("[{}|{}] strategies has been passed!".format(len(files) - len(error_map), len(files)))
+    print(u"=" * 40)
+    print(u"[{}|{}] strategies has been passed!".format(len(files) - len(error_map), len(files)))
     return len(error_map)
 
 
@@ -75,8 +72,8 @@ def run_test(filename):
             "strategy_file": os.path.join(TEST_DIR, filename)
         }
     }
-    print("Start test: " + str(config["base"]["strategy_file"]))
-    result_dict = run(config)
+    print(u"Start test: " + str(config["base"]["strategy_file"]))
+    result_dict = run(config)['sys_analyser']
     df = result_dict["total_portfolios"]
     # del df['positions']
 
@@ -104,8 +101,8 @@ def run_test(filename):
         except:
             pass
 
-        df = df.round(4)
-        old_df = old_df.round(4)
+        df = df.round(0)
+        old_df = old_df.round(0)
 
         result = df.eq(old_df)
         if not result.all().all():
@@ -141,7 +138,7 @@ def is_enable_coverage():
 
 
 def test_api():
-    print("Testing API......")
+    print(u"Testing API......")
     from rqalpha import run
 
     from tests.api.test_api_base import test_get_order_code_new, test_get_open_order_code_new, \
@@ -161,7 +158,7 @@ def test_api():
 
     base_api_config = {
         "base": {
-            "strategy_type": "stock",
+            "securities": "stock",
             "start_date": "2016-12-01",
             "end_date": "2016-12-31",
             "frequency": "1d",
@@ -173,16 +170,15 @@ def test_api():
             "log_level": "error",
         },
         "mod": {
-            "progress": {
+            "sys_progress": {
                 "enabled": False,
-                "priority": 400,
             },
         },
     }
 
     stock_api_config = {
         "base": {
-            "strategy_type": "stock",
+            "securities": "stock",
             "start_date": "2016-03-07",
             "end_date": "2016-03-08",
             "frequency": "1d",
@@ -194,16 +190,15 @@ def test_api():
             "log_level": "error",
         },
         "mod": {
-            "progress": {
+            "sys_progress": {
                 "enabled": False,
-                "priority": 400,
             },
         },
     }
 
     future_api_config = {
         "base": {
-            "strategy_type": "future",
+            "securities": "future",
             "start_date": "2016-03-07",
             "end_date": "2016-03-08",
             "frequency": "1d",
@@ -215,9 +210,8 @@ def test_api():
             "log_level": "error",
         },
         "mod": {
-            "progress": {
+            "sys_progress": {
                 "enabled": False,
-                "priority": 400,
             },
         },
     }
@@ -254,11 +248,43 @@ def test_api():
     run(future_api_config, test_buy_close_code_new)
     run(future_api_config, test_sell_close_code_new)
 
-    print("API test ends.")
+    print(u"API test ends.")
 
 
 def test_strategy():
     get_test_files()
+
+
+def write_csv(path, fields):
+    old_test_times = []
+    if not os.path.exists(path):
+        with open(path, 'w') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fields)
+            writer.writeheader()
+    with open(path) as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            old_test_times.append(row)
+
+    if performance_path is None:
+        if len(old_test_times) != 0 and time_spend > float(old_test_times[-1]["time_spend"]) * 1.1:
+            system_log.error("代码咋写的，太慢了！")
+            system_log.error("上次测试用例执行的总时长为：" + old_test_times[-1]["time_spend"])
+            system_log.error("本次测试用例执行的总时长增长为: " + str(time_spend))
+        else:
+            with open(path, 'a') as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=fields)
+                writer.writerow({'date_time': end_time, 'time_spend': time_spend})
+    else:
+        if 0 < len(old_test_times) < 5 and time_spend > float(sum(float(i['time_spend']) for i in old_test_times))/len(old_test_times) * 1.1:
+            raise RuntimeError('Performance regresses!')
+        elif len(old_test_times) >= 5 and time_spend > float(sum(float(i['time_spend']) for i in old_test_times[-5:]))/5 * 1.1:
+            raise RuntimeError('Performance regresses!')
+        else:
+            with open(path, 'a') as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=fields)
+                writer.writerow({'date_time': end_time, 'time_spend': time_spend})
+
 
 if __name__ == '__main__':
     if is_enable_coverage():
@@ -266,7 +292,11 @@ if __name__ == '__main__':
         cov = coverage.Coverage()
         cov.start()
 
+    performance_path = None
+    field_names = ['date_time', 'time_spend']
+
     start_time = datetime.now()
+
     if len(sys.argv) >= 2:
         if sys.argv[1] == 'mod':
             test_api()
@@ -275,6 +305,14 @@ if __name__ == '__main__':
         elif sys.argv[1] == 'strategy':
             test_strategy()
             end_time = datetime.now()
+
+        elif sys.argv[1] == 'performance':
+            test_api()
+            test_strategy()
+            end_time = datetime.now()
+            performance_path = sys.argv[2]
+            time_spend = (end_time - start_time).total_seconds()
+            write_csv(performance_path, field_names)
 
         else:
             target_file = sys.argv[1]
@@ -287,25 +325,8 @@ if __name__ == '__main__':
         end_time = datetime.now()
         if error_count == 0:
             time_csv_file_path = os.path.join(TEST_OUT, "time.csv")
-            field_names = ['date_time', 'time_spend']
-            old_test_times = []
             time_spend = (end_time - start_time).total_seconds()
-            if not os.path.exists(time_csv_file_path):
-                with open(time_csv_file_path, 'w') as csv_file:
-                    writer = csv.DictWriter(csv_file, fieldnames=field_names)
-                    writer.writeheader()
-            with open(time_csv_file_path) as csv_file:
-                reader = csv.DictReader(csv_file)
-                for row in reader:
-                    old_test_times.append(row)
-            if len(old_test_times) != 0 and time_spend > float(old_test_times[-1]["time_spend"]) * 1.1:
-                system_log.error("代码咋写的，太慢了！")
-                system_log.error("上次测试用例执行的总时长为：" + old_test_times[-1]["time_spend"])
-                system_log.error("本次测试用例执行的总时长增长为: " + str(time_spend))
-            else:
-                with open(time_csv_file_path, 'a') as csv_file:
-                    writer = csv.DictWriter(csv_file, fieldnames=field_names)
-                    writer.writerow({'date_time': end_time, 'time_spend': time_spend})
+            write_csv(time_csv_file_path, field_names)
 
         else:
             print('Failed!')

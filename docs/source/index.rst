@@ -99,6 +99,7 @@ RQAlpha API
     development/basic_concept
     development/mod
     development/event_source
+    development/data_source
 
 :doc:`development/make_contribute`
     如何加入 RQAlpha 的开发
@@ -112,6 +113,9 @@ RQAlpha API
 :doc:`development/event_source`
     扩展事件源
 
+:doc:`development/data_source`
+    扩展数据源
+
 其他
 ==================
 
@@ -119,12 +123,8 @@ RQAlpha API
     :caption: Extra
     :hidden:
 
-    faq
     history
     todo
-
-:doc:`faq`
-    FAQ
 
 :doc:`history`
     更新日志
@@ -138,7 +138,6 @@ RQAlpha API
 
 关于RQAlpha的任何问题可以通过以下途径来获取帮助
 
-*  查看 :doc:`FAQ <faq>` 页面找寻常见问题及解答
 *  可以通过 :ref:`genindex` 或者 :ref:`search` 来查找特定问题
 *  在 `github issue page`_ 中提交issue
 *  RQAlpha 交流群「487188429」

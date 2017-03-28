@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ..events import EVENT
+from ..events import EVENT, Event
 from ..utils import run_when_strategy_not_hold
 from ..utils.logger import user_system_log
 from ..utils.i18n import gettext as _
@@ -35,7 +35,7 @@ class Strategy(object):
         func_before_trading = scope.get('before_trading', None)
         if func_before_trading is not None and func_before_trading.__code__.co_argcount > 1:
             self._before_trading = lambda context: func_before_trading(context, None)
-            user_system_log.warn(_("deprecated parameter[bar_dict] in before_trading function."))
+            user_system_log.warn(_(u"deprecated parameter[bar_dict] in before_trading function."))
         else:
             self._before_trading = func_before_trading
         self._after_trading = scope.get('after_trading', None)
@@ -52,9 +52,9 @@ class Strategy(object):
         self._before_day_trading = scope.get('before_day_trading', None)
         self._before_night_trading = scope.get('before_night_trading', None)
         if self._before_day_trading is not None:
-            user_system_log.warn(_("[deprecated] before_day_trading is no longer used. use before_trading instead."))
+            user_system_log.warn(_(u"[deprecated] before_day_trading is no longer used. use before_trading instead."))
         if self._before_night_trading is not None:
-            user_system_log.warn(_("[deprecated] before_night_trading is no longer used. use before_trading instead."))
+            user_system_log.warn(_(u"[deprecated] before_night_trading is no longer used. use before_trading instead."))
 
     @property
     def user_context(self):
@@ -68,28 +68,30 @@ class Strategy(object):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._init(self._user_context)
 
-        Environment.get_instance().event_bus.publish_event(EVENT.POST_USER_INIT)
+        Environment.get_instance().event_bus.publish_event(Event(EVENT.POST_USER_INIT))
 
     @run_when_strategy_not_hold
-    def before_trading(self):
+    def before_trading(self, event):
         with ExecutionContext(EXECUTION_PHASE.BEFORE_TRADING):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._before_trading(self._user_context)
 
     @run_when_strategy_not_hold
-    def handle_bar(self, bar_dict):
-        with ExecutionContext(EXECUTION_PHASE.ON_BAR, bar_dict):
+    def handle_bar(self, event):
+        bar_dict = event.bar_dict
+        with ExecutionContext(EXECUTION_PHASE.ON_BAR):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._handle_bar(self._user_context, bar_dict)
 
     @run_when_strategy_not_hold
-    def handle_tick(self, tick):
-        with ExecutionContext(EXECUTION_PHASE.ON_TICK, tick):
+    def handle_tick(self, event):
+        tick = event.tick
+        with ExecutionContext(EXECUTION_PHASE.ON_TICK):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._handle_tick(self._user_context, tick)
 
     @run_when_strategy_not_hold
-    def after_trading(self):
+    def after_trading(self, event):
         with ExecutionContext(EXECUTION_PHASE.AFTER_TRADING):
             with ModifyExceptionFromType(EXC_TYPE.USER_EXC):
                 self._after_trading(self._user_context)

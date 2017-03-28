@@ -20,9 +20,9 @@ import json
 from dateutil.parser import parse
 
 from ..execution_context import ExecutionContext
+from ..environment import Environment
 from ..utils.exception import patch_user_exc, ModifyExceptionFromType
 from ..const import EXC_TYPE, EXECUTION_PHASE
-from ..environment import Environment
 from ..events import EVENT
 
 try:
@@ -180,7 +180,7 @@ class Scheduler(object):
         self._registry.append((lambda: self._is_nth_trading_day_in_month(tradingday),
                                time_checker, func))
 
-    def next_day_(self):
+    def next_day_(self, event):
         if len(self._registry) == 0:
             return
 
@@ -196,8 +196,9 @@ class Scheduler(object):
     def _minutes_since_midnight(hour, minute):
         return hour * 60 + minute
 
-    def next_bar_(self, bars):
-        with ExecutionContext(EXECUTION_PHASE.SCHEDULED, bars):
+    def next_bar_(self, event):
+        bars = event.bar_dict
+        with ExecutionContext(EXECUTION_PHASE.SCHEDULED):
             self._current_minute = self._minutes_since_midnight(self._ucontext.now.hour, self._ucontext.now.minute)
             for day_rule, time_rule, func in self._registry:
                 if day_rule() and time_rule():
@@ -205,7 +206,7 @@ class Scheduler(object):
                         func(self._ucontext, bars)
             self._last_minute = self._current_minute
 
-    def before_trading_(self):
+    def before_trading_(self, event):
         with ExecutionContext(EXECUTION_PHASE.BEFORE_TRADING):
             self._stage = 'before_trading'
             for day_rule, time_rule, func in self._registry:

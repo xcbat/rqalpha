@@ -13,14 +13,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 
 import pandas as pd
-import datetime
-try:
-    # For Python 2 兼容
-    from functools import lru_cache
-except Exception as e:
-    from fastcache import lru_cache
+
+from ..utils.py2 import lru_cache
 
 
 class TradingDatesMixin(object):
@@ -51,6 +48,11 @@ class TradingDatesMixin(object):
         date = pd.Timestamp(date).replace(hour=0, minute=0, second=0)
         pos = self._dates.searchsorted(date, side='right')
         return self._dates[pos]
+
+    def is_trading_date(self, date):
+        date = pd.Timestamp(date).replace(hour=0, minute=0, second=0)
+        pos = self._dates.searchsorted(date)
+        return pos < len(self._dates) and self._dates[pos] == date
 
     @lru_cache(512)
     def _get_future_trading_date(self, dt):
