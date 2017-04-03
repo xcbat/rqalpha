@@ -27,13 +27,14 @@ from ..events import EVENT
 class Portfolio(object):
     __repr__ = property_repr
 
-    def __init__(self, start_date, static_unit_net_value, units, accounts):
+    def __init__(self, start_date, static_unit_net_value, units, accounts, register_event=True):
         self._start_date = start_date
         self._static_unit_net_value = static_unit_net_value
         self._units = units
         self._accounts = accounts
         self._mixed_positions = None
-        self.register_event()
+        if register_event:
+            self.register_event()
 
     def register_event(self):
         """
@@ -59,7 +60,12 @@ class Portfolio(object):
         self._static_unit_net_value = value['static_unit_net_value']
         self._units = value['units']
         for k, v in six.iteritems(value['accounts']):
-            self._accounts[k].set_state(v)
+            if k == 'ACCOUNT_TYPE.STOCK':
+                self._accounts[ACCOUNT_TYPE.STOCK].set_state(v)
+            elif k == 'ACCOUNT_TYPE.FUTURE':
+                self._accounts[ACCOUNT_TYPE.FUTURE].set_state(v)
+            else:
+                raise NotImplementedError
 
     def _post_settlement(self, event):
         self._static_unit_net_value = self.unit_net_value
@@ -172,6 +178,10 @@ class Portfolio(object):
     @property
     def dividend_receivable(self):
         return sum(getattr(account, 'dividend_receivable', 0) for account in six.itervalues(self._accounts))
+
+    @property
+    def transaction_cost(self):
+        return sum(account.transaction_cost for account in six.itervalues(self._accounts))
 
     @property
     def market_value(self):

@@ -42,14 +42,15 @@ class RUN_TYPE(CustomEnum):
     BACKTEST = "BACKTEST"
     # Paper Trading
     PAPER_TRADING = "PAPER_TRADING"
+    LIVE_TRADING = 'LIVE_TRADING'
 
 
 # noinspection PyPep8Naming
 class ACCOUNT_TYPE(CustomEnum):
-    TOTAL = "TOTAL"
-    BENCHMARK = "BENCHMARK"
-    STOCK = "STOCK"
-    FUTURE = "FUTURE"
+    TOTAL = 0
+    BENCHMARK = 1
+    STOCK = 2
+    FUTURE = 3
 
 
 # noinspection PyPep8Naming

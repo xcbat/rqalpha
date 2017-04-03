@@ -358,7 +358,7 @@ def history_bars(order_book_id, bar_count, frequency, fields=None, skip_suspende
     T日handle_bar                T日当前minute bar
     =========================   ===================================================
 
-    :param order_book_id: 合约代码或者合约代码列表
+    :param order_book_id: 合约代码
     :type order_book_id: `str`
 
     :param int bar_count: 获取的历史数据数量，必填项
@@ -401,7 +401,7 @@ def history_bars(order_book_id, bar_count, frequency, fields=None, skip_suspende
     order_book_id = assure_order_book_id(order_book_id)
     env = Environment.get_instance()
 
-    dt = env.calendar_dt.date()
+    dt = env.calendar_dt
 
     if frequency == '1m' and env.config.base.frequency == '1d':
         raise RQInvalidArgument('can not get minute history in day back test')
@@ -409,7 +409,7 @@ def history_bars(order_book_id, bar_count, frequency, fields=None, skip_suspende
     if (env.config.base.frequency == '1m' and frequency == '1d') or \
         (frequency == '1d' and ExecutionContext.phase == EXECUTION_PHASE.BEFORE_TRADING):
         # 在分钟回测获取日线数据, 应该推前一天，这里应该使用 trading date
-        dt = env.data_proxy.get_previous_trading_date(env.trading_dt.date())
+        dt = env.data_proxy.get_previous_trading_date(env.trading_dt)
 
     return env.data_proxy.history_bars(order_book_id, bar_count, frequency, fields, dt, skip_suspended)
 
@@ -740,6 +740,6 @@ def current_snapshot(id_or_symbol):
         Snapshot(order_book_id: '000001.XSHE', datetime: datetime.datetime(2016, 1, 4, 9, 33), open: 10.0, high: 10.025, low: 9.9667, last: 9.9917, volume: 2050320, total_turnover: 20485195, prev_close: 9.99)
     """
     env = Environment.get_instance()
-    frequency = Environment.get_instance().config.base.frequency
+    frequency = env.config.base.frequency
     order_book_id = assure_order_book_id(id_or_symbol)
     return env.data_proxy.current_snapshot(order_book_id, frequency, env.calendar_dt)
