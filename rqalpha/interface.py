@@ -26,13 +26,12 @@ class AbstractStrategyLoader(with_metaclass(abc.ABCMeta)):
     在扩展模块中，可以通过调用 ``env.set_strategy_loader`` 来替换默认的策略加载器。
     """
     @abc.abstractmethod
-    def load(self, strategy, scope):
+    def load(self, scope):
         """
         [Required]
 
         load 函数负责组装策略代码和策略代码所在的域，并输出最终组装好的可执行域。
 
-        :param str strategy: 策略标识符，对应 ``config.base.strategy_file``，相应的命令行参数为 ``-f``。
         :param dict scope: 策略代码运行环境，在传入时，包含了所有基础API。
             通过在 scope 中添加函数可以实现自定义API；通过覆盖 scope 中相应的函数，可以覆盖原API。
 
@@ -135,12 +134,11 @@ class AbstractDataSource(object):
         """
         raise NotImplementedError
 
-    def get_dividend(self, order_book_id, adjusted=True):
+    def get_dividend(self, order_book_id):
         """
         获取股票/基金分红信息
 
         :param str order_book_id: 合约名
-        :param bool adjusted: 是否经过前复权处理
         :return:
         """
         raise NotImplementedError
@@ -184,7 +182,8 @@ class AbstractDataSource(object):
         """
         raise NotImplementedError
 
-    def history_bars(self, instrument, bar_count, frequency, fields, dt, skip_suspended=True, include_now=False):
+    def history_bars(self, instrument, bar_count, frequency, fields, dt, skip_suspended=True,
+                     include_now=False, adjust_type='pre', adjust_orig=None):
         """
         获取历史数据
 
@@ -213,8 +212,10 @@ class AbstractDataSource(object):
         =========================   ===================================================
 
         :param datetime.datetime dt: 时间
-
         :param bool skip_suspended: 是否跳过停牌日
+        :param bool include_now: 是否包含当天最新数据
+        :param str adjust_type: 复权类型，'pre', 'none', 'post'
+        :param datetime.datetime adjust_orig: 复权起点；
 
         :return: `numpy.ndarray`
 
@@ -241,7 +242,6 @@ class AbstractDataSource(object):
 
     def get_trading_minutes_for(self, instrument, trading_dt):
         """
-
         获取证券某天的交易时段，用于期货回测
 
         :param instrument: 合约对象
@@ -263,13 +263,20 @@ class AbstractDataSource(object):
         """
         raise NotImplementedError
 
-    def get_future_info(self, instrument, hedge_type):
+    def get_margin_info(self, instrument):
         """
-        获取期货合约手续费、保证金等数据
-
-        :param instrument: 合约对象
-        :param HEDGE_TYPE hedge_type: 枚举类型，账户对冲类型
+        获取合约的保证金数据
+        
+        :param instrument: 合约对象 
         :return: dict
+        """
+        raise NotImplementedError
+
+    def get_commission_info(self, instrument):
+        """
+        获取合约的手续费信息
+        :param instrument: 
+        :return: 
         """
         raise NotImplementedError
 

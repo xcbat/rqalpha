@@ -17,9 +17,20 @@
 from .base_position import BasePosition
 from ...const import ACCOUNT_TYPE, SIDE
 from ...environment import Environment
+from ...utils.i18n import gettext as _
+from ...utils.logger import user_system_log
 
 
 class StockPosition(BasePosition):
+
+    __abandon_properties__ = [
+        "bought_quantity",
+        "sold_quantity",
+        "bought_value",
+        "sold_value",
+        "average_cost"
+    ]
+
     def __init__(self, order_book_id):
         super(StockPosition, self).__init__(order_book_id)
         self._quantity = 0
@@ -92,56 +103,11 @@ class StockPosition(BasePosition):
             self._frozen -= order.unfilled_quantity
 
     @property
-    def total_orders(self):
-        """deprecated"""
-        return 1
-
-    @property
-    def total_trades(self):
-        """deprecated"""
-        return 1
-
-    @property
     def quantity(self):
         """
         [int] 当前持仓股数
         """
         return self._quantity
-
-    @property
-    def bought_quantity(self):
-        """
-        deprecated
-        """
-        return self._quantity
-
-    @property
-    def sold_quantity(self):
-        """
-        deprecated
-        """
-        return 0
-
-    @property
-    def bought_value(self):
-        """
-        deprecated
-        """
-        return self._quantity * self._avg_price
-
-    @property
-    def sold_value(self):
-        """
-        deprecated
-        """
-        return 0
-
-    @property
-    def average_cost(self):
-        """
-        [已弃用] 请使用 avg_price 获取持仓买入均价
-        """
-        return self._avg_price
 
     @property
     def avg_price(self):
@@ -179,3 +145,45 @@ class StockPosition(BasePosition):
             return 0
         total_value = accounts[ACCOUNT_TYPE.STOCK].total_value
         return 0 if total_value == 0 else self.market_value / total_value
+
+    # ------------------------------------ Abandon Property ------------------------------------
+
+    @property
+    def bought_quantity(self):
+        """
+        [已弃用]
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer valid.").format('stock_position.bought_quantity'))
+        return self._quantity
+
+    @property
+    def sold_quantity(self):
+        """
+        [已弃用]
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer valid.").format('stock_position.sold_quantity'))
+        return 0
+
+    @property
+    def bought_value(self):
+        """
+        [已弃用]
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer valid.").format('stock_position.bought_value'))
+        return self._quantity * self._avg_price
+
+    @property
+    def sold_value(self):
+        """
+        [已弃用]
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer valid.").format('stock_position.sold_value'))
+        return 0
+
+    @property
+    def average_cost(self):
+        """
+        [已弃用] 请使用 avg_price 获取持仓买入均价
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer valid.").format('stock_position.average_cost'))
+        return self._avg_price

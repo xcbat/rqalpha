@@ -30,7 +30,7 @@ import better_exceptions
 
 from . import const
 from .api import helper as api_helper
-from .core.strategy_loader import FileStrategyLoader, SourceCodeStrategyLoader
+from .core.strategy_loader import FileStrategyLoader, SourceCodeStrategyLoader, UserFuncStrategyLoader
 from .core.strategy import Strategy
 from .core.strategy_universe import StrategyUniverse
 from .core.global_var import GlobalVars
@@ -150,7 +150,7 @@ Are you sure to continue?""").format(data_bundle_path=data_bundle_path), abort=T
     tmp = os.path.join(tempfile.gettempdir(), 'rq.bundle')
 
     while True:
-        url = 'http://7xjci3.com1.z0.glb.clouddn.com/bundles_v2/rqbundle_%04d%02d%02d.tar.bz2' % (
+        url = 'http://7xjci3.com1.z0.glb.clouddn.com/bundles_v3/rqbundle_%04d%02d%02d.tar.bz2' % (
             day.year, day.month, day.day)
         six.print_(_(u"try {} ...").format(url))
         r = requests.get(url, stream=True)
@@ -178,14 +178,19 @@ Are you sure to continue?""").format(data_bundle_path=data_bundle_path), abort=T
     six.print_(_(u"Data bundle download successfully in {bundle_path}").format(bundle_path=data_bundle_path))
 
 
-def run(config, source_code=None):
+def run(config, source_code=None, user_funcs=None):
     env = Environment(config)
     persist_helper = None
     init_succeed = False
     mod_handler = ModHandler()
 
     try:
-        env.set_strategy_loader(FileStrategyLoader() if source_code is None else SourceCodeStrategyLoader())
+        if source_code is not None:
+            env.set_strategy_loader(SourceCodeStrategyLoader(source_code))
+        elif user_funcs is not None:
+            env.set_strategy_loader(UserFuncStrategyLoader(user_funcs))
+        else:
+            env.set_strategy_loader(FileStrategyLoader(config.base.strategy_file))
         env.set_global_vars(GlobalVars())
         mod_handler.set_env(env)
         mod_handler.start_up()
@@ -217,7 +222,7 @@ def run(config, source_code=None):
 
         if env.price_board is None:
             from .core.bar_dict_price_board import BarDictPriceBoard
-            env.price_board = BarDictPriceBoard(bar_dict)
+            env.price_board = BarDictPriceBoard()
 
         ctx = ExecutionContext(const.EXECUTION_PHASE.GLOBAL)
         ctx._push()
@@ -237,7 +242,7 @@ def run(config, source_code=None):
         apis = api_helper.get_apis(config.base.account_list)
         scope.update(apis)
 
-        scope = env.strategy_loader.load(env.config.base.strategy_file if source_code is None else source_code, scope)
+        scope = env.strategy_loader.load(scope)
 
         if env.config.extra.enable_profiler:
             enable_profiler(env, scope)
@@ -341,10 +346,9 @@ def enable_profiler(env, scope):
 
 
 def output_profile_result(env):
-    from six import StringIO
-    stdout_trap = StringIO()
+    stdout_trap = six.StringIO()
     env.profile_deco.print_stats(stdout_trap)
     profile_output = stdout_trap.getvalue()
     profile_output = profile_output.rstrip()
-    print(profile_output)
+    six.print_(profile_output)
     env.event_bus.publish_event(Event(EVENT.ON_LINE_PROFILER_RESULT, result=profile_output))

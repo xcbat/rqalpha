@@ -41,7 +41,15 @@ class Portfolio(object):
         注册事件
         """
         event_bus = Environment.get_instance().event_bus
-        event_bus.add_listener(EVENT.POST_SETTLEMENT, self._post_settlement)
+        event_bus.prepend_listener(EVENT.PRE_BEFORE_TRADING, self._pre_before_trading)
+
+    @staticmethod
+    def _enum_to_str(v):
+        return v.name
+
+    @staticmethod
+    def _str_to_enum(enum_class, s):
+        return enum_class.__members__[s]
 
     def get_state(self):
         return jsonpickle.encode({
@@ -49,7 +57,7 @@ class Portfolio(object):
             'static_unit_net_value': self._static_unit_net_value,
             'units': self._units,
             'accounts': {
-                name: account.get_state() for name, account in six.iteritems(self._accounts)
+                self._enum_to_str(name): account.get_state() for name, account in six.iteritems(self._accounts)
             }
         }).encode('utf-8')
 
@@ -60,14 +68,9 @@ class Portfolio(object):
         self._static_unit_net_value = value['static_unit_net_value']
         self._units = value['units']
         for k, v in six.iteritems(value['accounts']):
-            if k == 'ACCOUNT_TYPE.STOCK':
-                self._accounts[ACCOUNT_TYPE.STOCK].set_state(v)
-            elif k == 'ACCOUNT_TYPE.FUTURE':
-                self._accounts[ACCOUNT_TYPE.FUTURE].set_state(v)
-            else:
-                raise NotImplementedError
+            self._accounts[self._str_to_enum(ACCOUNT_TYPE, k)].set_state(v)
 
-    def _post_settlement(self, event):
+    def _pre_before_trading(self, event):
         self._static_unit_net_value = self.unit_net_value
 
     @property
@@ -142,7 +145,7 @@ class Portfolio(object):
         """
         [float] 累计年化收益率
         """
-        current_date = Environment.get_instance().calendar_dt.date()
+        current_date = Environment.get_instance().trading_dt.date()
         return self.unit_net_value ** (DAYS_CNT.DAYS_A_YEAR / float((current_date - self.start_date).days + 1)) - 1
 
     @property
@@ -190,6 +193,18 @@ class Portfolio(object):
         """
         return sum(account.market_value for account in six.itervalues(self._accounts))
 
+    @property
+    def pnl(self):
+        return (self.unit_net_value - 1) * self.units
+
+    @property
+    def starting_cash(self):
+        return self.units
+
+    @property
+    def frozen_cash(self):
+        return sum(account.frozen_cash for account in six.itervalues(self._accounts))
+
 
 class MixedPositions(dict):
 
@@ -203,6 +218,9 @@ class MixedPositions(dict):
             if a_type == account_type:
                 return self._accounts[a_type].positions[key]
         return None
+
+    def __contains__(self, item):
+        return item in self.keys()
 
     def __repr__(self):
         keys = []

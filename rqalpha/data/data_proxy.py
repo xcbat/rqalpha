@@ -17,6 +17,7 @@
 import six
 import numpy as np
 import pandas as pd
+import datetime
 
 from . import risk_free_helper
 from .instrument_mixin import InstrumentMixin
@@ -24,7 +25,7 @@ from .trading_dates_mixin import TradingDatesMixin
 from ..model.bar import BarObject
 from ..model.snapshot import SnapshotObject
 from ..utils.py2 import lru_cache
-from ..utils.datetime_func import convert_int_to_datetime
+from ..utils.datetime_func import convert_int_to_datetime, convert_date_to_int
 from ..const import HEDGE_TYPE
 
 
@@ -59,42 +60,43 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
         rate = yc.values[0, 0]
         return 0 if np.isnan(rate) else rate
 
-    @lru_cache(128)
-    def get_dividend(self, order_book_id, adjusted=True):
-        return self._data_source.get_dividend(order_book_id, adjusted)
+    def get_dividend(self, order_book_id):
+        return self._data_source.get_dividend(order_book_id)
 
-    @lru_cache(128)
     def get_split(self, order_book_id):
         return self._data_source.get_split(order_book_id)
 
-    def get_dividend_by_book_date(self, order_book_id, date, adjusted=True):
-        df = self.get_dividend(order_book_id, adjusted)
-        if df is None or df.empty:
+    def get_dividend_by_book_date(self, order_book_id, date):
+        table = self._data_source.get_dividend(order_book_id)
+        if table is None or len(table) == 0:
             return
 
-        dt = np.datetime64(date)
-        dates = df['book_closure_date'].values
+        dt = date.year * 10000 + date.month * 100 + date.day
+        dates = table['book_closure_date']
         pos = dates.searchsorted(dt)
         if pos == len(dates) or dt != dates[pos]:
             return None
 
-        return df.iloc[pos]
+        return table[pos]
 
     def get_split_by_ex_date(self, order_book_id, date):
         df = self.get_split(order_book_id)
-        if df is None or df.empty:
+        if df is None or len(df) == 0:
             return
-        try:
-            return df.loc[date]
-        except KeyError:
-            pass
+
+        dt = convert_date_to_int(date)
+        pos = df['ex_date'].searchsorted(dt)
+        if pos == len(df) or df['ex_date'][pos] != dt:
+            return None
+
+        return df['split_factor'][pos]
 
     @lru_cache(10240)
     def _get_prev_close(self, order_book_id, dt):
-        prev_trading_date = self.get_previous_trading_date(dt)
         instrument = self.instruments(order_book_id)
-        bar = self._data_source.history_bars(instrument, 1, '1d', 'close', prev_trading_date, False)
-        if bar is None or len(bar) == 0:
+        bar = self._data_source.history_bars(instrument, 2, '1d', 'close', dt,
+                                             skip_suspended=False, include_now=False)
+        if bar is None or len(bar) < 2:
             return np.nan
         return bar[0]
 
@@ -104,7 +106,8 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
     @lru_cache(10240)
     def _get_prev_settlement(self, instrument, dt):
         prev_trading_date = self.get_previous_trading_date(dt)
-        bar = self._data_source.history_bars(instrument, 1, '1d', 'settlement', prev_trading_date, False)
+        bar = self._data_source.history_bars(instrument, 1, '1d', 'settlement', prev_trading_date,
+                                             skip_suspended=False)
         if bar is None or len(bar) == 0:
             return np.nan
         return bar[0]
@@ -121,10 +124,6 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
             return np.nan
         return self._data_source.get_settle_price(instrument, date)
 
-    def get_last_price(self, order_book_id, dt):
-        instrument = self.instruments(order_book_id)
-        return self._data_source.get_last_price(instrument, dt)
-
     def get_bar(self, order_book_id, dt, frequency='1d'):
         instrument = self.instruments(order_book_id)
         bar = self._data_source.get_bar(instrument, dt, frequency)
@@ -139,11 +138,18 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
         return pd.Series(data[field], index=[convert_int_to_datetime(t) for t in data['datetime']])
 
     def fast_history(self, order_book_id, bar_count, frequency, field, dt):
-        return self.history_bars(order_book_id, bar_count, frequency, field, dt, skip_suspended=False)
+        return self.history_bars(order_book_id, bar_count, frequency, field, dt, skip_suspended=False,
+                                 adjust_type='pre', adjust_orig=dt)
 
-    def history_bars(self, order_book_id, bar_count, frequency, field, dt, skip_suspended=True, include_now=False):
+    def history_bars(self, order_book_id, bar_count, frequency, field, dt,
+                     skip_suspended=True, include_now=False,
+                     adjust_type='pre', adjust_orig=None):
         instrument = self.instruments(order_book_id)
-        return self._data_source.history_bars(instrument, bar_count, frequency, field, dt, skip_suspended, include_now)
+        if adjust_orig is None:
+            adjust_orig = dt
+        return self._data_source.history_bars(instrument, bar_count, frequency, field, dt,
+                                              skip_suspended=skip_suspended, include_now=include_now,
+                                              adjust_type=adjust_type, adjust_orig=adjust_orig)
 
     def current_snapshot(self, order_book_id, frequency, dt):
         instrument = self.instruments(order_book_id)
@@ -161,9 +167,13 @@ class DataProxy(InstrumentMixin, TradingDatesMixin):
     def available_data_range(self, frequency):
         return self._data_source.available_data_range(frequency)
 
-    def get_future_info(self, order_book_id, hedge_type=HEDGE_TYPE.SPECULATION):
+    def get_margin_info(self, order_book_id):
         instrument = self.instruments(order_book_id)
-        return self._data_source.get_future_info(instrument, hedge_type)
+        return self._data_source.get_margin_info(instrument)
+
+    def get_commission_info(self, order_book_id):
+        instrument = self.instruments(order_book_id)
+        return self._data_source.get_commission_info(instrument)
 
     def get_ticks(self, order_book_id, date):
         instrument = self.instruments(order_book_id)

@@ -2,6 +2,84 @@
 CHANGELOG
 ==================
 
+2.2.2
+==================
+
+- 增加 :code:`run_file` | :code:`run_code` | :code:`run_func` API, 详情请参见 `多种方式运行策略 <http://rqalpha.io/zh_CN/latest/intro/run_algorithm.html>`_
+- Breaking Change: 更改 :code:`AbstractStrategyLoader:load` 函数的传入参数，现在不需要 :code:`strategy` 了。
+- 增加 :code:`UserFuncStrategyLoader` 类
+- 根据 `Issue 116 <https://github.com/ricequant/rqalpha/issues/116>`_ 增加如下内容:
+
+  - :code:`POSITION_EFFECT` 增加 :code:`CLOSE_TODAY` 类型
+  - 增加调仓函数 :code:`order(order_book_id, quantity, price=None)` API
+
+    - 如果不传入 price 则认为执行的是 MarketOrder 类型订单，否则下 LimitOrder 订单
+    - 期货
+
+      - quantity > 0: 往 BUY 方向调仓 quantity 手
+      - quantity < 0: 往 SELL 方向调仓 quantity 手
+
+    - 股票
+
+      - 相当于 order_shares 函数
+
+  - 增加调仓函数 :code:`order_to(order_book_id, quantity, price=None)` API
+
+    - 基本逻辑和 :code:`order` 函数一致
+    - 区别在于 quantity 表示调仓对应的最终仓位
+
+  - 现有所有下单函数，增加 `price` option，具体行为和 :code:`order` | :code:`order_to` 一致
+
+- Fix bug in :code:`all_instruments` `PR 123 <https://github.com/ricequant/rqalpha/pull/123>`_
+- Fix "运行不满一天的情况下 sys_analyser 报 KeyError" `PR 118 <https://github.com/ricequant/rqalpha/pull/118>`_
+- sys_analyser 生成 report 对应的字段进行调整，具体调整内容请查看 commit `d9d19f <https://github.com/ricequant/rqalpha/commit/f6e4c24fde2f086cc09b45b2cc4d2cfe0cd9d19f>`_
+
+2.2.0
+==================
+
+- 增加 :code:`order` 和 :code:`order_to` 高阶下单函数
+- 更新数据源，现在使用原始数据和复权因子的方式进行回测
+- 不再使用 `ruamel.yaml` 该库在某些情况下无法正确解析 yml 配置文件
+- 解决 `six` 库依赖多次引用导致安装出错的问题
+- 解决 :code:`rqalpha run` 的时候指定 :code:`-st` | :code:`--kind` 时报错的问题
+- :code:`--security` / :code:`-st` 现在支持多种模式，可以使用 :code:`-st stock -st future` 也可以使用 :code:`-st stock_future` 来设置security
+- 更新 BarDictPriceBoard `Issue 115 <https://github.com/ricequant/rqalpha/issues/115>`_
+- 解决 :code:`print(context.portfolio)` 时因为调用了 `abandon property` 会报 warning 的问题 `Issue 114 <https://github.com/ricequant/rqalpha/issues/114>`_
+- 解决 :code:`rqalpha mod install xx` 不存在的 Mod 也会导致 mod_config.yml 更新的问题 `Issue 111 <https://github.com/ricequant/rqalpha/issues/111>`_
+- 解决 :code:`rqalpha plot` 无法画图的问题 `Issue 109 <https://github.com/ricequant/rqalpha/issues/109>`_
+
+2.1.4
+==================
+
+- 解决 history_bars 在 before_trading 获取的是未来数据的问题
+- 解决 before_trading 获取结算价是当前交易日结算价的问题
+- 增加 RQAlpha 向前兼容(0.3.x) `Issue 100 <https://github.com/ricequant/rqalpha/issues/100>`_
+- 期货增加强平机制: 及当前账户权益<=0时，清空仓位，资金置0 `Issue 108 <https://github.com/ricequant/rqalpha/issues/108>`_
+- 解决回测时只有一个交易日时，只有回测数据显示的问题
+
+2.1.3
+==================
+
+- Fix `Issue 101 <https://github.com/ricequant/rqalpha/issues/101>`_
+- Fix `Issue 105 <https://github.com/ricequant/rqalpha/issues/105>`_
+- 解决运行 RQAlpha 时缺少 `six` | `requests` 库依赖的问题
+- 解决安装RQAlpha时在某些情况下报错的问题
+- 解决第三方 Mod 安装后配置文件路径有误的问题
+- 现在可以通过 `rqalpha mod install -e .` 的方式来安装依赖 Mod 了
+- 现在运行策略时会检测当前目录是否存在 `config.yml` 或者 `config.json` 来作为配置文件
+- 解决股票下单就存在 `position` 的问题，现在只有成交后才会产生 `position` 了。
+- 修复 `portfolio` 和 `future_account` 计算逻辑的一些问题
+- 修复 `transaction_cost` 在某个 position 清空以后计算不准确的问题
+- 在信号模式下 `price_limit` 表示是否输出涨跌停买入/卖出的报警信息，但不会阻止其买入/卖出
+
+2.1.2
+==================
+
+- 提供 :code:`from rqalpha import cli` 方便第三方 Mod 扩展 `rqalpha` command
+- :code:`history_bars` 增加 :code:`include_now` option
+- Fix `Issue 90 <https://github.com/ricequant/rqalpha/issues/90>`_
+- Fix `Issue 94 <https://github.com/ricequant/rqalpha/issues/94>`_
+
 2.1.0
 ==================
 

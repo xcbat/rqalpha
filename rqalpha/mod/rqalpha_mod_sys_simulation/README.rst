@@ -6,15 +6,15 @@ RQAlpha 回测 Mod，启用该模块开启回测功能。
 
 该模块是系统模块，不可删除
 
-开启或关闭策略分析 Mod
+开启或关闭策略回测/模拟 Mod
 ===============================
 
 ..  code-block:: bash
 
-    # 关闭策略分析 Mod
+    # 关闭策略回测/模拟 Mod
     $ rqalpha mod disable sys_simulation
 
-    # 启用策略分析 Mod
+    # 启用策略回测/模拟 Mod
     $ rqalpha mod enable sys_simulation
 
 模块配置项
@@ -35,7 +35,7 @@ RQAlpha 回测 Mod，启用该模块开启回测功能。
         "slippage": 0,
         # 设置手续费乘数，默认为1
         "commission_multiplier": 1,
-        # price_limit: 在处于涨跌停时，无法买进/卖出，默认开启
+        # price_limit: 在处于涨跌停时，无法买进/卖出，默认开启【在 Signal 模式下，不再禁止买进/卖出，如果开启，则给出警告提示。】
         "price_limit": True,
         # 是否有成交量限制
         "volume_limit": True,

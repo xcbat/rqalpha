@@ -13,14 +13,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
 
+import sys
+import os
 import six
 import numpy as np
 
+from ..interface import AbstractDataSource
+from ..const import MARGIN_TYPE
 from ..utils.py2 import lru_cache
 from ..utils.datetime_func import convert_date_to_int, convert_int_to_date
-from ..interface import AbstractDataSource
+from ..utils.i18n import gettext as _
+from ..utils.logger import user_system_log
+
 from .future_info_cn import CN_FUTURE_INFO
 from .converter import StockBarConverter, IndexBarConverter
 from .converter import FutureDayBarConverter, FundDayBarConverter
@@ -30,6 +35,8 @@ from .dividend_store import DividendStore
 from .instrument_store import InstrumentStore
 from .trading_dates_store import TradingDatesStore
 from .yield_curve_store import YieldCurveStore
+from .simple_factor_store import SimpleFactorStore
+from .adjust import adjust_bars, FIELDS_REQUIRE_ADJUSTMENT
 
 
 class BaseDataSource(AbstractDataSource):
@@ -37,30 +44,32 @@ class BaseDataSource(AbstractDataSource):
         def _p(name):
             return os.path.join(path, name)
 
-        self._day_bars = [
-            DayBarStore(_p('stocks.bcolz'), StockBarConverter),
-            DayBarStore(_p('indexes.bcolz'), IndexBarConverter),
-            DayBarStore(_p('futures.bcolz'), FutureDayBarConverter),
-            DayBarStore(_p('funds.bcolz'), FundDayBarConverter),
-        ]
+        try:
+            self._day_bars = [
+                DayBarStore(_p('stocks.bcolz'), StockBarConverter),
+                DayBarStore(_p('indexes.bcolz'), IndexBarConverter),
+                DayBarStore(_p('futures.bcolz'), FutureDayBarConverter),
+                DayBarStore(_p('funds.bcolz'), FundDayBarConverter),
+            ]
 
-        self._instruments = InstrumentStore(_p('instruments.pk'))
-        self._adjusted_dividends = DividendStore(_p('adjusted_dividends.bcolz'))
-        self._original_dividends = DividendStore(_p('original_dividends.bcolz'))
-        self._trading_dates = TradingDatesStore(_p('trading_dates.bcolz'))
-        self._yield_curve = YieldCurveStore(_p('yield_curve.bcolz'))
+            self._instruments = InstrumentStore(_p('instruments.pk'))
+            self._dividends = DividendStore(_p('original_dividends.bcolz'))
+            self._trading_dates = TradingDatesStore(_p('trading_dates.bcolz'))
+            self._yield_curve = YieldCurveStore(_p('yield_curve.bcolz'))
+            self._split_factor = SimpleFactorStore(_p('split_factor.bcolz'))
+            self._ex_cum_factor = SimpleFactorStore(_p('ex_cum_factor.bcolz'))
 
-        self._st_stock_days = DateSet(_p('st_stock_days.bcolz'))
-        self._suspend_days = DateSet(_p('suspended_days.bcolz'))
+            self._st_stock_days = DateSet(_p('st_stock_days.bcolz'))
+            self._suspend_days = DateSet(_p('suspended_days.bcolz'))
 
-        self.get_yield_curve = self._yield_curve.get_yield_curve
-        self.get_risk_free_rate = self._yield_curve.get_risk_free_rate
+            self.get_yield_curve = self._yield_curve.get_yield_curve
+            self.get_risk_free_rate = self._yield_curve.get_risk_free_rate
+        except IOError as e:
+            raise RuntimeError(
+                _(u"Bundle is out of date, please use `rqalpha update_bundle` to renew your bundle data."))
 
-    def get_dividend(self, order_book_id, adjusted=True):
-        if adjusted:
-            return self._adjusted_dividends.get_dividend(order_book_id)
-        else:
-            return self._original_dividends.get_dividend(order_book_id)
+    def get_dividend(self, order_book_id):
+        return self._dividends.get_dividend(order_book_id)
 
     def get_trading_minutes_for(self, order_book_id, trading_dt):
         raise NotImplementedError
@@ -110,7 +119,7 @@ class BaseDataSource(AbstractDataSource):
         bars = self._all_day_bars_of(instrument)
         if bars is None:
             return
-        dt = convert_date_to_int(dt)
+        dt = np.uint64(convert_date_to_int(dt))
         pos = bars['datetime'].searchsorted(dt)
         if pos >= len(bars) or bars['datetime'][pos] != dt:
             return None
@@ -134,7 +143,12 @@ class BaseDataSource(AbstractDataSource):
                 return False
         return True
 
-    def history_bars(self, instrument, bar_count, frequency, fields, dt, skip_suspended=True, include_now=False):
+    def get_ex_cum_factor(self, order_book_id):
+        return self._ex_cum_factor.get_factors(order_book_id)
+
+    def history_bars(self, instrument, bar_count, frequency, fields, dt,
+                     skip_suspended=True, include_now=False,
+                     adjust_type='pre', adjust_orig=None):
         if frequency != '1d':
             raise NotImplementedError
 
@@ -146,13 +160,19 @@ class BaseDataSource(AbstractDataSource):
         if bars is None or not self._are_fields_valid(fields, bars.dtype.names):
             return None
 
-        dt = convert_date_to_int(dt)
+        dt = np.uint64(convert_date_to_int(dt))
         i = bars['datetime'].searchsorted(dt, side='right')
         left = i - bar_count if i >= bar_count else 0
-        if fields is None:
-            return bars[left:i]
-        else:
-            return bars[left:i][fields]
+        bars = bars[left:i]
+        if adjust_type == 'none' or instrument.type in {'Future', 'INDX'}:
+            # 期货及指数无需复权
+            return bars if fields is None else bars[fields]
+
+        if isinstance(fields, str) and fields not in FIELDS_REQUIRE_ADJUSTMENT:
+            return bars if fields is None else bars[fields]
+
+        return adjust_bars(bars, self.get_ex_cum_factor(instrument.order_book_id),
+                           fields, adjust_type, adjust_orig)
 
     def get_yield_curve(self, start_date, end_date, tenor=None):
         return self._yield_curve.get_yield_curve(start_date, end_date, tenor)
@@ -164,7 +184,7 @@ class BaseDataSource(AbstractDataSource):
         raise NotImplementedError
 
     def get_split(self, order_book_id):
-        return None
+        return self._split_factor.get_factors(order_book_id)
 
     def available_data_range(self, frequency):
         if frequency in ['tick', '1d']:
@@ -173,8 +193,15 @@ class BaseDataSource(AbstractDataSource):
 
         raise NotImplementedError
 
-    def get_future_info(self, instrument, hedge_type):
-        return CN_FUTURE_INFO[instrument.underlying_symbol][hedge_type.value]
+    def get_margin_info(self, instrument):
+        return {
+            'margin_type': MARGIN_TYPE.BY_MONEY,
+            'long_margin_ratio': instrument.margin_rate,
+            'short_margin_ratio': instrument.margin_rate,
+        }
+
+    def get_commission_info(self, instrument):
+        return CN_FUTURE_INFO[instrument.underlying_symbol]['speculation']
 
     def get_ticks(self, order_book_id, date):
         raise NotImplementedError

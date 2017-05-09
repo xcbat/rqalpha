@@ -63,7 +63,7 @@ class RealtimeEventSource(AbstractEventSource):
     def quotation_worker(self):
         while True:
             if not is_holiday_today() and is_tradetime_now():
-                order_book_id_list = sorted(Environment.get_instance().data_proxy.all_instruments("CS").order_book_id.tolist())
+                order_book_id_list = sorted([instruments.order_book_id for instruments in self._env.data_proxy.all_instruments("CS", self._env.trading_dt)])
                 code_list = [order_book_id_2_tushare_code(code) for code in order_book_id_list]
 
                 try:
@@ -97,7 +97,6 @@ class RealtimeEventSource(AbstractEventSource):
                 self.event_queue.put((dt, EVENT.AFTER_TRADING))
                 self.after_trading_fire_date = dt.date()
             elif dt.strftime("%H:%M:%S") >= "15:10:00" and dt.date() > self.settlement_fire_date:
-            #or (dt.date()-self.settlement_fire_date).days >= 2:
                 self.event_queue.put((dt, EVENT.SETTLEMENT))
                 self.settlement_fire_date = dt.date()
 

@@ -20,6 +20,9 @@ from ...const import SIDE, POSITION_EFFECT, ACCOUNT_TYPE
 
 
 class FuturePosition(BasePosition):
+
+    __abandon_properties__ = []
+
     def __init__(self, order_book_id):
         super(FuturePosition, self).__init__(order_book_id)
 
@@ -68,9 +71,10 @@ class FuturePosition(BasePosition):
 
     @property
     def margin_rate(self):
-        margin_rate = Environment.get_instance().get_future_margin_rate(self.order_book_id)
-        margin_multiplier = Environment.get_instance().config.base.margin_multiplier
-        return margin_rate * margin_multiplier
+        env = Environment.get_instance()
+        margin_info = env.data_proxy.get_margin_info(self.order_book_id)
+        margin_multiplier = env.config.base.margin_multiplier
+        return margin_info['long_margin_ratio'] * margin_multiplier
 
     @property
     def market_value(self):
@@ -134,6 +138,20 @@ class FuturePosition(BasePosition):
         [float] 当日平仓盈亏
         """
         return self.buy_realized_pnl + self.sell_realized_pnl
+
+    @property
+    def buy_daily_pnl(self):
+        """
+        [float] 当日买方向盈亏
+        """
+        return self.buy_holding_pnl + self.buy_realized_pnl
+
+    @property
+    def sell_daily_pnl(self):
+        """
+        [float] 当日卖方向盈亏
+        """
+        return self.sell_holding_pnl + self.sell_realized_pnl
 
     @property
     def daily_pnl(self):
@@ -348,28 +366,39 @@ class FuturePosition(BasePosition):
         self._buy_realized_pnl = 0.
         self._sell_realized_pnl = 0.
 
+    def _margin_of(self, quantity, price):
+        env = Environment.get_instance()
+        instrument = env.data_proxy.instruments(self.order_book_id)
+        return quantity * instrument.contract_multiplier * price * self.margin_rate
+
     def apply_trade(self, trade):
         trade_quantity = trade.last_quantity
         if trade.side == SIDE.BUY:
             if trade.position_effect == POSITION_EFFECT.OPEN:
                 self._buy_avg_open_price = (self._buy_avg_open_price * self.buy_quantity +
                                             trade_quantity * trade.last_price) / (self.buy_quantity + trade_quantity)
-                self._buy_transaction_cost += trade.commission
+                self._buy_transaction_cost += trade.transaction_cost
                 self._buy_today_holding_list.insert(0, (trade.last_price, trade_quantity))
+                return -1 * self._margin_of(trade_quantity, trade.last_price)
             else:
-                self._sell_transaction_cost += trade.commission
+                old_margin = self.margin
+                self._sell_transaction_cost += trade.transaction_cost
                 delta_realized_pnl = self._close_holding(trade)
                 self._sell_realized_pnl += delta_realized_pnl
+                return old_margin - self.margin + delta_realized_pnl
         else:
             if trade.position_effect == POSITION_EFFECT.OPEN:
                 self._sell_avg_open_price = (self._sell_avg_open_price * self.sell_quantity +
                                              trade_quantity * trade.last_price) / (self.sell_quantity + trade_quantity)
-                self._sell_transaction_cost += trade.commission
+                self._sell_transaction_cost += trade.transaction_cost
                 self._sell_today_holding_list.insert(0, (trade.last_price, trade_quantity))
+                return -1 * self._margin_of(trade_quantity, trade.last_price)
             else:
-                self._buy_transaction_cost += trade.commission
+                old_margin = self.margin
+                self._buy_transaction_cost += trade.transaction_cost
                 delta_realized_pnl = self._close_holding(trade)
                 self._buy_realized_pnl += delta_realized_pnl
+                return old_margin - self.margin + delta_realized_pnl
 
     def _close_holding(self, trade):
         left_quantity = trade.last_quantity
@@ -383,7 +412,7 @@ class FuturePosition(BasePosition):
                     consumed_quantity = left_quantity
                     self._sell_old_holding_list = [(old_price, old_quantity - left_quantity)]
                 else:
-                    consumed_quantity = left_quantity
+                    consumed_quantity = old_quantity
                 left_quantity -= consumed_quantity
                 delta += self._cal_realized_pnl(old_price, trade.last_price, trade.side, consumed_quantity)
             # 再平进仓
@@ -406,7 +435,7 @@ class FuturePosition(BasePosition):
                     consumed_quantity = left_quantity
                     self._buy_old_holding_list = [(old_price, old_quantity - left_quantity)]
                 else:
-                    consumed_quantity = left_quantity
+                    consumed_quantity = old_quantity
                 left_quantity -= consumed_quantity
                 delta += self._cal_realized_pnl(old_price, trade.last_price, trade.side, consumed_quantity)
             # 再平今仓

@@ -16,13 +16,29 @@
 
 import six
 
+from ...utils.repr import property_repr
+from ...utils.i18n import gettext as _
+from ...utils.logger import user_system_log
+
 
 class BaseAccount(object):
+
+    __abandon_properties__ = [
+        "portfolio_value",
+        "starting_cash",
+        "daily_returns",
+        "total_returns",
+        "pnl"
+    ]
+
+    __repr__ = property_repr
+
     def __init__(self, total_cash, positions, backward_trade_set=set(), register_event=True):
         self._positions = positions
         self._frozen_cash = 0
         self._total_cash = total_cash
         self._backward_trade_set = backward_trade_set
+        self._transaction_cost = 0
         if register_event:
             self.register_event()
 
@@ -93,5 +109,46 @@ class BaseAccount(object):
         """
         [float] 总费用
         """
-        return sum(position.transaction_cost for position in six.itervalues(self._positions))
+        return self._transaction_cost
 
+    # ------------------------------------ Abandon Property ------------------------------------
+
+    @property
+    def portfolio_value(self):
+        """
+        [已弃用] 请使用 total_value
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer used.").format('account.portfolio_value'))
+        return self.total_value
+
+    @property
+    def starting_cash(self):
+        """
+        [已弃用] 请使用 total_value
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer used.").format('account.starting_cash'))
+        return 0
+
+    @property
+    def daily_returns(self):
+        """
+        [已弃用] 请使用 total_value
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer used.").format('account.daily_returns'))
+        return 0
+
+    @property
+    def total_returns(self):
+        """
+        [已弃用] 请使用 total_value
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer used.").format('account.total_returns'))
+        return 0
+
+    @property
+    def pnl(self):
+        """
+        [已弃用] 请使用 total_value
+        """
+        user_system_log.warn(_(u"[abandon] {} is no longer used.").format('account.pnl'))
+        return 0
