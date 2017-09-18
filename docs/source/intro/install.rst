@@ -37,6 +37,8 @@ bcolz 是 RQAlpha 的依赖库，因为其编译时间较长，并且中间比�
 
     *   Windows 环境下因为默认没有安装 `Visual C++ Compiler`, 需要自行下载并安装 `visual-cpp-build-tools`，如果觉得麻烦，也可以直接去 http://www.lfd.uci.edu/~gohlke/pythonlibs/#bcolz 下载相应版本的 :code:`bcolz wheel` 包，直接安装编译后的 bcolz 版本。
 
+    *   除了 bcolz 库以外，line-profiler 安装时也同样需要 C++ 编译器，如果出现安装失败，也可以同样下载 :code:`line-profiler wheel` 包来进行安装。
+
     *   Mac OS 环境下默认没有安装`X-code`，需要自行运行安装以添加一个轻量级的C/C++ clang编译器，可在Terminal下输入：
 
         .. code-block:: bash
@@ -115,6 +117,13 @@ FAQ
 `bcolz` 安装大部分问题都来自于没有安装 `Visual C++ Compiler`，建议您无论如何先成功安装 `Visual C++ Compiler`， 访问 https://wiki.python.org/moin/WindowsCompilers 根据自己的机器环境和Python版本选择安装对应的编译工具。
 
 不进行编译安装，访问 http://www.lfd.uci.edu/~gohlke/pythonlibs/#bcolz 下载 :code:`bcolz` 直接进行安装。
+
+如果您按照 :ref:`intro-detail-install` 进行环境搭建并安装了 `anaconda` 您可以使用如下方式进行免编译安装
+
+.. code-block:: bash
+
+    $ conda install bcolz -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
+
 
 2.  Matplotlib 相关问题
 ------------------------------------------------------

@@ -15,11 +15,14 @@
 # limitations under the License.
 
 import datetime
+
 import six
 
 from rqalpha.interface import AbstractMod
 from rqalpha.environment import Environment
 from rqalpha.events import EVENT
+from rqalpha.execution_context import ExecutionContext
+from rqalpha.const import EXECUTION_PHASE
 
 
 class FuncatAPIMod(AbstractMod):
@@ -27,14 +30,16 @@ class FuncatAPIMod(AbstractMod):
         try:
             import funcat
         except ImportError:
-            six.print_(u"-" * 50)
-            six.print_(u">>> Missing funcat. Please run `pip install funcat`")
-            six.print_(u"-" * 50)
+            six.print_("-" * 50)
+            six.print_(">>> Missing funcat. Please run `pip install funcat`")
+            six.print_("-" * 50)
             raise
 
         from funcat.data.backend import DataBackend
         from funcat.context import set_current_date
         from funcat.utils import get_date_from_int
+
+        from rqalpha.api import history_bars
 
         class RQAlphaDataBackend(DataBackend):
             """
@@ -56,6 +61,8 @@ class FuncatAPIMod(AbstractMod):
                 self.rqalpha_env.event_bus.add_listener(EVENT.PRE_BEFORE_TRADING, self._pre_before_trading)
                 self.rqalpha_env.event_bus.add_listener(EVENT.PRE_BAR, self._pre_handle_bar)
 
+                self.fetch_data_by_api = True
+
             def _pre_before_trading(self, *args, **kwargs):
                 calendar_date = self.rqalpha_env.calendar_dt.date()
                 self.set_current_date(calendar_date)
@@ -63,6 +70,22 @@ class FuncatAPIMod(AbstractMod):
             def _pre_handle_bar(self, *args, **kwargs):
                 calendar_date = self.rqalpha_env.calendar_dt.date()
                 self.set_current_date(calendar_date)
+
+            def _history_bars(self, order_book_id, bar_count, freq, dt):
+                if self.fetch_data_by_api and ExecutionContext.phase() in (
+                        EXECUTION_PHASE.BEFORE_TRADING,
+                        EXECUTION_PHASE.ON_BAR,
+                        EXECUTION_PHASE.ON_TICK,
+                        EXECUTION_PHASE.AFTER_TRADING,
+                        EXECUTION_PHASE.SCHEDULED):
+                        bars = history_bars(
+                            order_book_id, bar_count, freq, fields=None)
+                else:
+                    bars = self.rqalpha_env.data_proxy.history_bars(
+                        order_book_id, bar_count, freq,
+                        field=["datetime", "open", "high", "low", "close", "volume"],
+                        dt=dt)
+                return bars
 
             def get_price(self, order_book_id, start, end, freq):
                 """
@@ -78,12 +101,10 @@ class FuncatAPIMod(AbstractMod):
                 scale = 1
                 if freq[-1] == "m":
                     scale *= 240. / int(freq[:-1])
-                bar_count = int((end - start).days * scale)
+                bar_count = int(((end - start).days + 1) * scale)
 
                 dt = datetime.datetime.combine(end, datetime.time(23, 59, 59))
-                bars = self.rqalpha_env.data_proxy.history_bars(
-                    order_book_id, bar_count, freq, field=None,
-                    dt=dt)
+                bars = self._history_bars(order_book_id, bar_count, freq, dt)
 
                 if bars is None or len(bars) == 0:
                     raise KeyError("empty bars {}".format(order_book_id))
@@ -98,7 +119,6 @@ class FuncatAPIMod(AbstractMod):
 
             def get_trading_dates(self, start, end):
                 """获取所有的交易日
-
                 :param start: 20160101
                 :param end: 20160201
                 """

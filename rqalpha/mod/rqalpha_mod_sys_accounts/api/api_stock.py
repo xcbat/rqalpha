@@ -14,31 +14,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-'''
-更多描述请见
-https://www.ricequant.com/api/python/chn
-'''
-
 from decimal import Decimal, getcontext
 
 import six
 import numpy as np
 
-from .api_base import decorate_api_exc, instruments, cal_style
-from ..const import ACCOUNT_TYPE, EXECUTION_PHASE, SIDE, ORDER_TYPE
-from ..environment import Environment
-from ..execution_context import ExecutionContext
-from ..model.instrument import Instrument
-from ..model.order import Order, OrderStyle, MarketOrder, LimitOrder
-from ..utils.arg_checker import apply_rules, verify_that
+from rqalpha.api.api_base import decorate_api_exc, instruments, cal_style, register_api
+from rqalpha.const import DEFAULT_ACCOUNT_TYPE, EXECUTION_PHASE, SIDE, ORDER_TYPE
+from rqalpha.environment import Environment
+from rqalpha.execution_context import ExecutionContext
+from rqalpha.model.instrument import Instrument
+from rqalpha.model.order import Order, OrderStyle, MarketOrder, LimitOrder
+from rqalpha.utils.arg_checker import apply_rules, verify_that
 # noinspection PyUnresolvedReferences
-from ..utils.exception import patch_user_exc, RQInvalidArgument
-from ..utils.i18n import gettext as _
-from ..utils.logger import user_system_log
+from rqalpha.utils.exception import patch_user_exc, RQInvalidArgument
+from rqalpha.utils.i18n import gettext as _
+from rqalpha.utils.logger import user_system_log
 # noinspection PyUnresolvedReferences
-from ..utils.scheduler import market_close, market_open
+from rqalpha.utils.scheduler import market_close, market_open
 # noinspection PyUnresolvedReferences
-from ..utils import scheduler
+from rqalpha.utils import scheduler
 
 # 使用Decimal 解决浮点数运算精度问题
 getcontext().prec = 10
@@ -48,6 +43,9 @@ __all__ = [
     'market_close',
     'scheduler',
 ]
+
+
+register_api("scheduler", scheduler)
 
 
 def export_as_api(func):
@@ -61,10 +59,11 @@ def export_as_api(func):
 @export_as_api
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
                                 EXECUTION_PHASE.ON_TICK,
-                                EXECUTION_PHASE.SCHEDULED)
+                                EXECUTION_PHASE.SCHEDULED,
+                                EXECUTION_PHASE.GLOBAL)
 @apply_rules(verify_that('id_or_ins').is_valid_stock(),
              verify_that('amount').is_number(),
-             verify_that('style').is_instance_of((MarketOrder, LimitOrder)))
+             verify_that('style').is_instance_of((MarketOrder, LimitOrder, type(None))))
 def order_shares(id_or_ins, amount, price=None, style=None):
     """
     落指定股数的买/卖单，最常见的落单方式之一。如有需要落单类型当做一个参量传入，如果忽略掉落单类型，那么默认是市价单（market order）。
@@ -146,6 +145,10 @@ def order_shares(id_or_ins, amount, price=None, style=None):
 def _sell_all_stock(order_book_id, amount, style):
     env = Environment.get_instance()
     order = Order.__from_create__(order_book_id, amount, SIDE.SELL, style, None)
+    if amount == 0:
+        order.mark_rejected(_(u"Order Creation Failed: 0 order quantity"))
+        return order
+
     if env.can_submit_order(order):
         env.broker.submit_order(order)
     return order
@@ -154,10 +157,11 @@ def _sell_all_stock(order_book_id, amount, style):
 @export_as_api
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
                                 EXECUTION_PHASE.ON_TICK,
-                                EXECUTION_PHASE.SCHEDULED)
+                                EXECUTION_PHASE.SCHEDULED,
+                                EXECUTION_PHASE.GLOBAL)
 @apply_rules(verify_that('id_or_ins').is_valid_stock(),
              verify_that('amount').is_number(),
-             verify_that('style').is_instance_of((MarketOrder, LimitOrder)))
+             verify_that('style').is_instance_of((MarketOrder, LimitOrder, type(None))))
 def order_lots(id_or_ins, amount, price=None, style=None):
     """
     指定手数发送买/卖单。如有需要落单类型当做一个参量传入，如果忽略掉落单类型，那么默认是市价单（market order）。
@@ -190,16 +194,17 @@ def order_lots(id_or_ins, amount, price=None, style=None):
 
     style = cal_style(price, style)
 
-    return order_shares(id_or_ins, amount * round_lot, style)
+    return order_shares(id_or_ins, amount * round_lot, style=style)
 
 
 @export_as_api
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
                                 EXECUTION_PHASE.ON_TICK,
-                                EXECUTION_PHASE.SCHEDULED)
+                                EXECUTION_PHASE.SCHEDULED,
+                                EXECUTION_PHASE.GLOBAL)
 @apply_rules(verify_that('id_or_ins').is_valid_stock(),
              verify_that('cash_amount').is_number(),
-             verify_that('style').is_instance_of((MarketOrder, LimitOrder)))
+             verify_that('style').is_instance_of((MarketOrder, LimitOrder, type(None))))
 def order_value(id_or_ins, cash_amount, price=None, style=None):
     """
     使用想要花费的金钱买入/卖出股票，而不是买入/卖出想要的股数，正数代表买入，负数代表卖出。股票的股数总是会被调整成对应的100的倍数（在A中国A股市场1手是100股）。当您提交一个卖单时，该方法代表的意义是您希望通过卖出该股票套现的金额。如果金额超出了您所持有股票的价值，那么您将卖出所有股票。需要注意，如果资金不足，该API将不会创建发送订单。
@@ -245,7 +250,7 @@ def order_value(id_or_ins, cash_amount, price=None, style=None):
     if price == 0:
         return order_shares(order_book_id, 0, style)
 
-    account = env.portfolio.accounts[ACCOUNT_TYPE.STOCK]
+    account = env.portfolio.accounts[DEFAULT_ACCOUNT_TYPE.STOCK.name]
     round_lot = int(env.get_instrument(order_book_id).round_lot)
 
     if cash_amount > 0:
@@ -262,16 +267,17 @@ def order_value(id_or_ins, cash_amount, price=None, style=None):
     position = account.positions[order_book_id]
     amount = downsize_amount(amount, position)
 
-    return order_shares(order_book_id, amount, style)
+    return order_shares(order_book_id, amount, style=style)
 
 
 @export_as_api
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
                                 EXECUTION_PHASE.ON_TICK,
-                                EXECUTION_PHASE.SCHEDULED)
+                                EXECUTION_PHASE.SCHEDULED,
+                                EXECUTION_PHASE.GLOBAL)
 @apply_rules(verify_that('id_or_ins').is_valid_stock(),
              verify_that('percent').is_number().is_greater_or_equal_than(-1).is_less_or_equal_than(1),
-             verify_that('style').is_instance_of((MarketOrder, LimitOrder)))
+             verify_that('style').is_instance_of((MarketOrder, LimitOrder, type(None))))
 def order_percent(id_or_ins, percent, price=None, style=None):
     """
     发送一个等于目前投资组合价值（市场价值和目前现金的总和）一定百分比的买/卖单，正数代表买，负数代表卖。股票的股数总是会被调整成对应的一手的股票数的倍数（1手是100股）。百分比是一个小数，并且小于或等于1（<=100%），0.5表示的是50%.需要注意，如果资金不足，该API将不会创建发送订单。
@@ -299,17 +305,18 @@ def order_percent(id_or_ins, percent, price=None, style=None):
         raise RQInvalidArgument(_(u"percent should between -1 and 1"))
 
     style = cal_style(price, style)
-    account = Environment.get_instance().portfolio.accounts[ACCOUNT_TYPE.STOCK]
-    return order_value(id_or_ins, account.total_value * percent, style)
+    account = Environment.get_instance().portfolio.accounts[DEFAULT_ACCOUNT_TYPE.STOCK.name]
+    return order_value(id_or_ins, account.total_value * percent, style=style)
 
 
 @export_as_api
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
                                 EXECUTION_PHASE.ON_TICK,
-                                EXECUTION_PHASE.SCHEDULED)
+                                EXECUTION_PHASE.SCHEDULED,
+                                EXECUTION_PHASE.GLOBAL)
 @apply_rules(verify_that('id_or_ins').is_valid_stock(),
              verify_that('cash_amount').is_number(),
-             verify_that('style').is_instance_of((MarketOrder, LimitOrder)))
+             verify_that('style').is_instance_of((MarketOrder, LimitOrder, type(None))))
 def order_target_value(id_or_ins, cash_amount, price=None, style=None):
     """
     买入/卖出并且自动调整该证券的仓位到一个目标价值。如果还没有任何该证券的仓位，那么会买入全部目标价值的证券。如果已经有了该证券的仓位，则会买入/卖出调整该证券的现在仓位和目标仓位的价值差值的数目的证券。需要注意，如果资金不足，该API将不会创建发送订单。
@@ -334,23 +341,24 @@ def order_target_value(id_or_ins, cash_amount, price=None, style=None):
         order_target_value('000001.XSHE', 10000)
     """
     order_book_id = assure_stock_order_book_id(id_or_ins)
-    account = Environment.get_instance().portfolio.accounts[ACCOUNT_TYPE.STOCK]
+    account = Environment.get_instance().portfolio.accounts[DEFAULT_ACCOUNT_TYPE.STOCK.name]
     position = account.positions[order_book_id]
 
     style = cal_style(price, style)
     if cash_amount == 0:
         return _sell_all_stock(order_book_id, position.quantity, style)
 
-    return order_value(order_book_id, cash_amount - position.market_value, style)
+    return order_value(order_book_id, cash_amount - position.market_value, style=style)
 
 
 @export_as_api
 @ExecutionContext.enforce_phase(EXECUTION_PHASE.ON_BAR,
                                 EXECUTION_PHASE.ON_TICK,
-                                EXECUTION_PHASE.SCHEDULED)
+                                EXECUTION_PHASE.SCHEDULED,
+                                EXECUTION_PHASE.GLOBAL)
 @apply_rules(verify_that('id_or_ins').is_valid_stock(),
              verify_that('percent').is_number().is_greater_or_equal_than(0).is_less_or_equal_than(1),
-             verify_that('style').is_instance_of((MarketOrder, LimitOrder)))
+             verify_that('style').is_instance_of((MarketOrder, LimitOrder, type(None))))
 def order_target_percent(id_or_ins, percent, price=None, style=None):
     """
     买入/卖出证券以自动调整该证券的仓位到占有一个指定的投资组合的目标百分比。
@@ -391,13 +399,13 @@ def order_target_percent(id_or_ins, percent, price=None, style=None):
 
     style = cal_style(price, style)
 
-    account = Environment.get_instance().portfolio.accounts[ACCOUNT_TYPE.STOCK]
+    account = Environment.get_instance().portfolio.accounts[DEFAULT_ACCOUNT_TYPE.STOCK.name]
     position = account.positions[order_book_id]
 
     if percent == 0:
         return _sell_all_stock(order_book_id, position.quantity, style)
 
-    return order_value(order_book_id, account.total_value * percent - position.market_value, style)
+    return order_value(order_book_id, account.total_value * percent - position.market_value, style=style)
 
 
 @export_as_api
@@ -451,17 +459,7 @@ def is_st_stock(order_book_id, count=1):
 
 def assure_stock_order_book_id(id_or_symbols):
     if isinstance(id_or_symbols, Instrument):
-        order_book_id = id_or_symbols.order_book_id
-        """
-        这所以使用XSHG和XSHE来判断是否可交易是因为股票类型策略支持很多种交易类型，比如CS, ETF, LOF, FenjiMU, FenjiA, FenjiB,
-        INDX等，但实际其中部分由不能交易，所以不能直接按照类型区分该合约是否可以交易。而直接通过判断其后缀可以比较好的区分是否可以进行交易
-        """
-        if "XSHG" in order_book_id or "XSHE" in order_book_id:
-            return order_book_id
-        else:
-            raise RQInvalidArgument(
-                _(u"{order_book_id} is not supported in current strategy type").format(
-                    order_book_id=order_book_id))
+        return id_or_symbols.order_book_id
     elif isinstance(id_or_symbols, six.string_types):
         return assure_stock_order_book_id(instruments(id_or_symbols))
     else:
